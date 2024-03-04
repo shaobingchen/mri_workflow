@@ -9,6 +9,7 @@ def parser():
     parser.add_argument("--subjectslist","-s",default = None, help = "(str, \"sub-s001,sub-s002\") ",type=str)
     parser.add_argument("--anatlist","-a",default = "anat", help = "anat list, \"anat\", if more than one is input, mp2rage mode is automatically selected...",type=str)
     parser.add_argument("--funclist","-f",default = "rest", help = "func list, \"rest,task1,task2\", runs you want to process",type=str)
+    parser.add_argument("--logdir",default= None, help = "log file's directoty", type=str)
     #optional processing
     parser.add_argument("--freesurferflag","-fs", action="store_true", help = "recon-all, default not")
     parser.add_argument("--freesurferoutputdir", default = None, help = "freesurfer output don't set will be automatically set to be \"niftifileroot/derivatives/freesurfer\"")
@@ -25,7 +26,10 @@ def parser():
     # parser.add_argument('--nuisanceflag', action="store_true", help = 'nuisance regress, default not')
     # parser.add_argument('--filterflag', action="store_true", help = 'bandpass filter or not, recommand in rs-fmri, default not')
     # parser.add_argument('--meicasmkernal', default = 12, help = 'meica smooth kernal, FWHM(mm)')
-    
+
+    return parser
+
+def parser_analysis(parser):
     args=parser.parse_args()
 
     #set freesurfer output dir
@@ -35,5 +39,8 @@ def parser():
     #set ciftify output dir
     if args.ciftifyflag and args.ciftifyoutputdir is None:
         args.ciftifyoutputdir = op.join(args.niftifileroot,"derivatives","ciftify")
+    
+    #set output dir
+    if args.
 
-    return parser
+def get_anat_list():

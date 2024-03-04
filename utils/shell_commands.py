@@ -6,10 +6,13 @@ class ShellCommand(object):
     def __init__(self,command):
         '''Initialize the command'''
         self.command = command
+        
+    def __str__(self) -> str:
+        return self.command
 
     def run(self):
         '''Execute the command'''
-        subprocess.run(self.command, shell=True)
+        subprocess.Popen(self.command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, text=True)
 
 if __name__ == '__main__':
     # Example usage
