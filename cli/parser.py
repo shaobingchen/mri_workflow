@@ -29,7 +29,7 @@ def parser():
 
     return parser
 
-def parser_analysis(parser):
+def set_default_dir(parser):
     args=parser.parse_args()
 
     #set freesurfer output dir
@@ -41,6 +41,12 @@ def parser_analysis(parser):
         args.ciftifyoutputdir = op.join(args.niftifileroot,"derivatives","ciftify")
     
     #set output dir
-    if args.
+    if args.outputdir is None:
+        args.outputdir = op.join(args.niftifileroot,"derivatives","preprocessed")
+    
 
-def get_anat_list():
+def set_default_logdir(parser):
+    args=parser.parse_args()
+    #set log dir
+    if args.logdir is None:
+        args.logdir = op.join(args.niftifileroot,"derivatives","log")

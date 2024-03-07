@@ -1,4 +1,6 @@
 import logging
+import os
+
 
 def setup_logging(logdir):
 
@@ -11,11 +13,12 @@ def setup_logging(logdir):
                 self._log(COMMAND_LEVEL, message, args, **kws)
         logging.logger.command=command
 
-        logger = logging.getLogger()
-        logger.setLevel()
+        logger = logging.getLogger("logger")
+        logger.setLevel("DEBUG")
+
         #config handler for log file
-        file_handler=logging.FileHandler()
-        
+        DEBUG_handler=logging.FileHandler(os.path.join(logdir,"DEBUG"))
+        INFO_handler=logging.FileHandler(os)
         
     except Exception :
         print(f"Logging setup failed: {Exception}")
