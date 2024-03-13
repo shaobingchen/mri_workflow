@@ -7,12 +7,12 @@ class ShellCommand(object):
         '''Initialize the command'''
         self.command = command
         
-    def __str__(self) -> str:
-        return self.command
-
     def run(self):
         '''Execute the command'''
         subprocess.Popen(self.command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, text=True)
+
+    def __str__(self) -> str:
+        return self.command
 
 if __name__ == '__main__':
     # Example usage
