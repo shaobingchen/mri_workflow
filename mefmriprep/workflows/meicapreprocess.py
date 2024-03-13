@@ -1,10 +1,11 @@
-from ..cli import parser
-import utils.log 
+from ..cli.parser import parser
+from ..utils import log
 #confige the logging
 
 def main():
    
-   args = parser.parser.parse_args()
+   parser=parser()
+   args = parser.parse_args()
    #logger = utils.log.setup_logging()
    if args.multithread:
       pass
