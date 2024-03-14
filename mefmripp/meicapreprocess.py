@@ -8,8 +8,10 @@ def main():
    logger = log.setup_logging(args.logdir)
 
    if args.multithread:
+      #TODO: multithread
       pass
    else:
+      
       pass
 if __name__ == "__main__":
     main()
