@@ -1,0 +1,55 @@
+2024-03-14 21:06:17,258 - sub-002 - sub-002 start processing...
+2024-03-14 21:06:17,258 - sub-002 - Command dir start
+2024-03-14 21:06:17,263 - sub-002 - command's stdout:  Volume in drive E is 990pro
+
+2024-03-14 21:06:17,263 - sub-002 - command's stdout:  Volume Serial Number is DA91-A295
+
+2024-03-14 21:06:17,263 - sub-002 - command's stdout: 
+
+2024-03-14 21:06:17,263 - sub-002 - command's stdout:  Directory of E:\project\mefmriprepV2
+
+2024-03-14 21:06:17,263 - sub-002 - command's stdout: 
+
+2024-03-14 21:06:17,263 - sub-002 - command's stdout: 03/13/2024  18:50    <DIR>          .
+
+2024-03-14 21:06:17,263 - sub-002 - command's stdout: 02/27/2024  13:13    <DIR>          ..
+
+2024-03-14 21:06:17,263 - sub-002 - command's stdout: 03/14/2024  20:57    <DIR>          mefmripp
+
+2024-03-14 21:06:17,263 - sub-002 - command's stdout: 03/13/2024  13:51    <DIR>          mefmriprep
+
+2024-03-14 21:06:17,263 - sub-002 - command's stdout: 03/13/2024  13:56                70 run.py
+
+2024-03-14 21:06:17,263 - sub-002 - command's stdout: 03/13/2024  21:04    <DIR>          test
+
+2024-03-14 21:06:17,263 - sub-002 - command's stdout:                1 File(s)             70 bytes
+
+2024-03-14 21:06:17,263 - sub-002 - command's stdout:                5 Dir(s)  1,247,043,317,760 bytes free
+
+2024-03-14 21:06:17,263 - sub-002 - Command dir start
+2024-03-14 21:06:17,267 - sub-002 - command's stdout:  Volume in drive E is 990pro
+
+2024-03-14 21:06:17,267 - sub-002 - command's stdout:  Volume Serial Number is DA91-A295
+
+2024-03-14 21:06:17,267 - sub-002 - command's stdout: 
+
+2024-03-14 21:06:17,267 - sub-002 - command's stdout:  Directory of E:\project\mefmriprepV2
+
+2024-03-14 21:06:17,267 - sub-002 - command's stdout: 
+
+2024-03-14 21:06:17,267 - sub-002 - command's stdout: 03/13/2024  18:50    <DIR>          .
+
+2024-03-14 21:06:17,267 - sub-002 - command's stdout: 02/27/2024  13:13    <DIR>          ..
+
+2024-03-14 21:06:17,267 - sub-002 - command's stdout: 03/14/2024  20:57    <DIR>          mefmripp
+
+2024-03-14 21:06:17,267 - sub-002 - command's stdout: 03/13/2024  13:51    <DIR>          mefmriprep
+
+2024-03-14 21:06:17,267 - sub-002 - command's stdout: 03/13/2024  13:56                70 run.py
+
+2024-03-14 21:06:17,267 - sub-002 - command's stdout: 03/13/2024  21:04    <DIR>          test
+
+2024-03-14 21:06:17,267 - sub-002 - command's stdout:                1 File(s)             70 bytes
+
+2024-03-14 21:06:17,267 - sub-002 - command's stdout:                5 Dir(s)  1,247,043,317,760 bytes free
+

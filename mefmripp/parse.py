@@ -1,4 +1,5 @@
 import argparse
+import os
 import os.path as op
 
 def create_args():
@@ -29,13 +30,14 @@ def create_args():
     # parser.add_argument('--meicasmkernal', default = 12, help = 'meica smooth kernal, FWHM(mm)')
 
     args=parser.parse_args()
-    set_default_logdir(args)
+    set_default_dir(args)
+    #parse subjectslist
+    get_subjectlist(args)
 
     return args
 
-def set_default_dir(parser):
-    args=parser.parse_args()
-
+def set_default_dir(args):
+    "set default dir for outputdir, logdir, freesurferoutputdir, ciftifyoutputdir"
     #set freesurfer output dir
     if args.freesurferflag and args.freesurferoutputdir is None:
         args.freesurferoutputdir = op.join(args.niftifileroot,"derivatives","freesurfer")
@@ -48,11 +50,19 @@ def set_default_dir(parser):
     if args.outputdir is None:
         args.outputdir = op.join(args.niftifileroot,"derivatives","preprocessed")
     
-
-def set_default_logdir(args):
     #set log dir
     if args.logdir is None:
         args.logdir = op.join(args.niftifileroot,"derivatives","log")
+
+
+def get_subjectlist(args):
+    "parse subjectslist"
+    if args.subjectslist is None:
+        args.subjectslist = [f for f in os.listdir(args.niftifileroot) if op.isdir(op.join(args.niftifileroot,f))]
+    else:
+        args.subjectslist = args.subjectslist.split(",")
+    return args
+    
 
 def is_dir(dir_string):
     if not op.isdir(dir_string):
