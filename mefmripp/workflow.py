@@ -1,26 +1,24 @@
 from shell_commands import ShellCommand
-
 class Workflow(object):
     '''Class to form a series of commands'''
 
-    def __init__(self,*commands,workdir=None):
-        if len(commands) > 0:
-            self.commands = commands
-        else:
-            self.commands = []
+    def __init__(self, *commands, workdir=None):
+        self.commands = list(commands)
         self.workdir = workdir
 
-        #check if all commands are ShellCommand objects
-        for command in self.commands:
-            if not isinstance(command,ShellCommand):
-                raise TypeError(f"{command} is not a ShellCommand object")
+        # Check if all commands are ShellCommand objects
+        if not all(isinstance(command, ShellCommand) for command in self.commands):
+            raise TypeError("All commands must be ShellCommand objects")
 
-    def add_command(self,command):
-        if isinstance(command,ShellCommand):
-            self.commands.append(command)
-        else:
+    def add_command(self, command):
+        self._check_command_type(command)
+        self.commands.append(command)
+
+    def _check_command_type(self, command):
+        if not isinstance(command, ShellCommand):
             raise TypeError(f"{command} is not a ShellCommand object")
-    
+
     def run(self):
         for command in self.commands:
-            command.excute()
+            command.workdir = self.workdir
+            command.execute()
