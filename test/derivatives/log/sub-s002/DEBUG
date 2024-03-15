@@ -1,0 +1,5 @@
+2024-03-15 22:22:21,581 - sub-s002 - sub-s002 start processing...
+2024-03-15 22:22:21,581 - sub-s002 - Start workflow anatworkflow
+2024-03-15 22:22:21,581 - sub-s002 - Command recon-all -all  -subject sub-s002 -i E:\project\mefmriprepV2\test\sub-s002\anat\T1w.nii -sd E:\project\mefmriprepV2\test\derivative\freesurfer start
+2024-03-15 22:22:21,586 - sub-s002 - command's stderr: 'recon-all' is not recognized as an internal or external command,
+2024-03-15 22:22:21,586 - sub-s002 - command's stderr: operable program or batch file.

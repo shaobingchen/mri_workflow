@@ -1,6 +1,7 @@
 import argparse
 import os
 import os.path as op
+from re import match
 
 def create_args():
     parser = argparse.ArgumentParser(description="meica preprocess script")
@@ -8,8 +9,8 @@ def create_args():
     parser.add_argument("--outputdir","-o",default=None, help = "outputdir for bids dataset", type=str)
     #dataset structure
     parser.add_argument("--subjectslist","-s",default = None, help = "(str, \"sub-s001,sub-s002\") ",type=str)
-    parser.add_argument("--anatlist","-a",default = "anat", help = "anat list, \"anat\", if more than one is input, mp2rage mode is automatically selected...",type=str)
-    parser.add_argument("--funclist","-f",default = "rest", help = "func list, \"rest,task1,task2\", runs you want to process",type=str)
+    parser.add_argument("--anatfoldername","-a",default = "anat", help = "anat list, \"anat\", if more than one is input, mp2rage mode is automatically selected...",type=str)
+    parser.add_argument("--funcfoldername","-f",default = "func", help = "func list, \"rest,task1,task2\", runs you want to process",type=str)
     parser.add_argument("--logdir",default= None, help = "log file's directory", type=str)
     #optional processing
     parser.add_argument("--freesurferflag","-fs", action="store_true", help = "recon-all, default not")
@@ -58,11 +59,14 @@ def set_default_dir(args):
 def get_subjectlist(args):
     "parse subjectslist"
     if args.subjectslist is None:
-        args.subjectslist = [f for f in os.listdir(args.niftifileroot) if op.isdir(op.join(args.niftifileroot,f))]
+        args.subjectslist = [f for f in os.listdir(args.niftifileroot) if match("sub-*",f)]
     else:
         args.subjectslist = args.subjectslist.split(",")
+
+    if args.subjectslist is None:
+        raise argparse.ArgumentTypeError("subjectslist is None")
     return args
-    
+
 
 def is_dir(dir_string):
     if not op.isdir(dir_string):
