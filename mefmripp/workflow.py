@@ -5,17 +5,18 @@ import logging
 class Workflow(object):
     '''Class to form a series of commands'''
 
-    def __init__(self, *commands, subject=None, workdir=None, entry_point=None, workflow_name=None, args=None):
-        self.commands = list(commands)
+    def __init__(self, *actions, subject=None, workdir=None, entry_point=None, workflow_name=None, args=None):
+        self.actions = list(actions)
         self.subject = subject
         self.workdir = workdir
         self.entry_point = entry_point
         self.outpoint = None
         self.workflow_name = workflow_name
         self.args=args
+        self.logger = logging.getLogger(self.subject)
 
         # Check if all commands are ShellCommand objects
-        if not all(isinstance(command, ShellCommand) for command in self.commands):
+        if not all(isinstance(command, ShellCommand) for command in self.actions):
             raise TypeError("All commands must be ShellCommand objects")
         
         if subject is None:
@@ -25,34 +26,40 @@ class Workflow(object):
             raise ValueError("workdir must be specified")
         
         if entry_point is None:
-            logger = logging.getLogger(self.subject)
-            logger.warning("entry_point is not specified, this may be fine, but need notice")
+            self.logger.warning("entry_point is not specified, this may be fine, but need notice")
         
 
-    def add_command(self, command):
-        self._check_command_type(command)
-        self.commands.append(command)
+    def add_action(self, actions):
+        self._check_command_type(actions)
+        self.actions.append(actions)
 
-    def _check_command_type(self, command):
-        if not isinstance(command, ShellCommand):
-            raise TypeError(f"{command} is not a ShellCommand object")
+    def _check_command_type(self, actions):
+        if not isinstance(actions, ShellCommand):
+            self.logger.warning(f"{actions} is not a ShellCommand object, maybe a python script")
 
     def run(self):
-        last_command_outputdir = self.entry_point
+        last_action_outputdir = self.entry_point
         logger = logging.getLogger(self.subject)
 
         logger.info(f"Start workflow {self.workflow_name}")
-        for command in self.commands:
 
-            command.subject = self.subject
-            command.input = last_command_outputdir
-            command.workdir = self.workdir
-            command.args = self.args
+        #create workdir 
+        if not os.path.exists(self.workdir):
+            os.makedirs(self.workdir)
+        else:
+            logger.warning(f"{self.workdir} used for {self.workflow_name} already exists, may overwrite")
+        #execute actions
+        for action in self.actions:
 
-            command.execute()
+            action.subject = self.subject
+            action.input = last_action_outputdir
+            action.workdir = self.workdir
+            action.args = self.args
 
-            last_command_outputdir = command.workdir
+            action.execute()
 
-        self.outpoint = last_command_outputdir
+            last_action_outputdir = action.outputdir
+
+        self.outpoint = last_action_outputdir
 
         return self.outpoint

@@ -1,5 +1,9 @@
-2024-03-15 22:22:21,571 - sub-s001 - sub-s001 start processing...
-2024-03-15 22:22:21,571 - sub-s001 - Start workflow anatworkflow
-2024-03-15 22:22:21,571 - sub-s001 - Command recon-all -all  -subject sub-s001 -i E:\project\mefmriprepV2\test\sub-s001\anat\T1w.nii -sd E:\project\mefmriprepV2\test\derivative\freesurfer start
-2024-03-15 22:22:21,579 - sub-s001 - command's stderr: 'recon-all' is not recognized as an internal or external command,
-2024-03-15 22:22:21,579 - sub-s001 - command's stderr: operable program or batch file.
+2024-03-16 15:44:24,275 - sub-s001 - sub-s001 start processing...
+2024-03-16 15:44:24,275 - sub-s001 - Start workflow Anat_Freesurfer_Workflow
+2024-03-16 15:44:24,275 - sub-s001 - E:\project\mefmriprepV2\test\derivative used for Anat_Freesurfer_Workflow already exists, may overwrite
+2024-03-16 15:44:24,275 - sub-s001 - Command "recon-all -all  -subject sub-s001 -i E:\project\mefmriprepV2\test\sub-s001\anat\T1w.nii -sd E:\project\mefmriprepV2\test\derivative\freesurfer" start
+2024-03-16 15:44:24,283 - sub-s001 - command's stderr: 'recon-all' is not recognized as an internal or external command,
+2024-03-16 15:44:24,284 - sub-s001 - command's stderr: operable program or batch file.
+2024-03-16 15:44:24,284 - sub-s001 - Command "ciftify_recon_all  --ciftify-work-dir E:\project\mefmriprepV2\test\derivative\ciftify --fs-subjects-dir E:\project\mefmriprepV2\test\derivative\freesurfer   sub-s001" start
+2024-03-16 15:44:24,290 - sub-s001 - command's stderr: 'ciftify_recon_all' is not recognized as an internal or external command,
+2024-03-16 15:44:24,291 - sub-s001 - command's stderr: operable program or batch file.
