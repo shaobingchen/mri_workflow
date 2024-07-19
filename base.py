@@ -84,20 +84,37 @@ class Node(object):
     
 class Work(object):
 
-    def __init__(self, name, input_nodes = None, output_nodes = None, run_metadata: RunMetaData = None):
+    def __init__(self, name, input_nodes = None, output_nodes = None,action = None):
         self.name = name
+        if not isinstance(input_nodes, list):
+            input_nodes = [input_nodes]
         self.input_nodes = input_nodes
+        if not isinstance(output_nodes, list):
+            output_nodes = [output_nodes]
         self.output_nodes = output_nodes
-        self.run_metadata = run_metadata
+        self.action = action
 
     @property
     def get_add_node(self):
         return self.input_nodes + self.output_nodes
     
     
-    def run(self):
-        print(f"{self.name} \n {os.path.join(self.run_metadata.directory_path, self.name)}")
+    def run(self, run_metadata: RunMetaData):
+        if self.action is None:
+            raise ValueError(f"action for {self.name} has not been defined")
+        self.action(self.input_nodes, self.output_nodes, run_metadata)
 
+def get_common_nodes(workflow1, workflow2):
+    return set(workflow1.nodes()) & set(workflow2.nodes())
+
+def get_common_works(workflow1, workflow2):
+    return set(workflow1.work()) & set(workflow2.work())
+
+def get_common_nodes_name(workflow1, workflow2):
+    return {node.name for node in get_common_nodes(workflow1, workflow2)}
+
+def get_common_works_name(workflow1, workflow2):
+    return {work.name for work in get_common_works(workflow1, workflow2)}
 
 class Workflow(nx.DiGraph):
     
@@ -111,9 +128,9 @@ class Workflow(nx.DiGraph):
         self.add_edges_from(list(product(work.input_nodes, work.output_nodes)))
         self.works.append(work)
 
-    def run(self):
+    def run(self,run_metadata: RunMetaData):
         for work in self.works:
-            work.run()
+            work.run(run_metadata)
         
     def draw_graph(self):
 
@@ -122,7 +139,12 @@ class Workflow(nx.DiGraph):
         
     #TODO add workflow to workflow    
         
-    
-
-
+    @classmethod
+    def merge_workflow(cls, *workflows):
+        new_workflow = cls()
+        for workflow in workflows:
+            new_workflow.add_nodes_from(workflow.nodes())
+            new_workflow.add_edges_from(workflow.edges())
+            new_workflow.works += workflow.works
+        return new_workflow
     
