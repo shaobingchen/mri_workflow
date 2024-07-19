@@ -132,12 +132,22 @@ class Workflow(nx.DiGraph):
         for work in self.works:
             work.run(run_metadata)
         
-    def draw_graph(self):
+    def draw_graph(self, file_name = "workflow.png"):
 
         nx.draw(self, with_labels=True, labels= {node: node.name for node in self.nodes()}, node_color='lightblue', node_size=700, arrowstyle='-|>', arrowsize=20)
-        plt.savefig("workflow.png")
+        plt.savefig(file_name)
         
+    def add_workflow(self, workflow: 'Workflow'):
+        self.add_node(workflow)
+
     #TODO add workflow to workflow    
+    def __hash__(self) -> int:
+        return super().__hash__()
+
+    def __eq__(self, another) -> bool:
+        if isinstance(another, Workflow):
+            return set(self.nodes()) == set(another.nodes()) and set(self.edges()) == set(another.edges())
+        return False
         
     @classmethod
     def merge_workflow(cls, *workflows):
