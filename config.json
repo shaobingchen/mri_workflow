@@ -3,5 +3,9 @@
     "condi": "condi",
     "subjectslist": "subjectslist",
     "despike_flag": true,
-    "slicetiming_flag": true
+    "slicetiming_flag": true,
+    "test_work_derivatives": [
+        "derivatives",
+        "test"
+    ]
 }
