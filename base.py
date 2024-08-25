@@ -64,7 +64,7 @@ class RunMetaData(object):
     
 
 class Node(object):
-    def __init__(self, node_name, describe = None ,suffix = None, derivatives_place = None):
+    def __init__(self, node_name, describe = None ,suffix = None, derivatives_place: list = None):
         self.name = node_name
         self.describe = describe
         self.surffix = suffix
@@ -136,8 +136,8 @@ class Work(object):
 
         self.action(self.input_nodes, self.output_nodes, run_metadata, config, derivatives_place)
 
-def join_derivatives_path(derivatives_place, run_metadata: RunMetaData):
-    os.path.join(run_metadata.rootdir, *derivatives_place, run_metadata.join_temp_place)
+def join_derivatives_path(derivatives_place: list, run_metadata: RunMetaData):
+    return os.path.join(run_metadata.rootdir, *derivatives_place, run_metadata.join_temp_place)
 
 def get_common_nodes(workflow1, workflow2):
     return set(workflow1.nodes()) & set(workflow2.nodes())
@@ -153,7 +153,7 @@ def get_common_works_name(workflow1, workflow2):
 
 class Workflow(nx.DiGraph):
     
-    def __init__(self, name, derivatives_place, incoming_graph_data=None, **attr):
+    def __init__(self, name, derivatives_place: list, incoming_graph_data=None, **attr):
         super().__init__(incoming_graph_data, **attr)
         self.name = name
         self.derivatives_place = derivatives_place
@@ -211,8 +211,8 @@ class Workflow(nx.DiGraph):
         return False
         
     @classmethod
-    def merge_workflow(cls, *workflows):
-        new_workflow = cls()
+    def merge_workflow(cls,name, derivatives_place:list, *workflows):
+        new_workflow = cls(name, derivatives_place)
         for workflow in workflows:
             new_workflow.add_nodes_from(workflow.nodes())
             new_workflow.add_edges_from(workflow.edges())

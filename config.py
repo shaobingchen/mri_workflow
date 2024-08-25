@@ -82,12 +82,11 @@ if __name__ == "__main__":
     
     config_path = "./config.json"
     dic = {
-        "niftifileroot": "niftifileroot",
+        "rootdir": "rootdir",
         "condi": "condi",
         "subjectslist": "subjectslist",
         "despike_flag": True,
         "slicetiming_flag": True,
-        "test_work_derivatives": ["derivatives", "test"]
     }
 
     config_generator(dic, config_path)

@@ -1,11 +1,7 @@
 {
-    "niftifileroot": "niftifileroot",
+    "rootdir": "rootdir",
     "condi": "condi",
     "subjectslist": "subjectslist",
     "despike_flag": true,
-    "slicetiming_flag": true,
-    "test_work_derivatives": [
-        "derivatives",
-        "test"
-    ]
+    "slicetiming_flag": true
 }
