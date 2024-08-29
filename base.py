@@ -6,28 +6,20 @@ from copy import deepcopy as dc
 import inspect
 
 class Component(object):
-    def __init__(self, desc = None, suffix = None, datatype = None, run_metadata = None, extension = None, task = None, space = None, echo = None):
+    def __init__(self, desc = None, suffix = None, datatype = None, run_metadata = None, use_extension = False, extension = None, task = None, space = None, echo = None, type = 'run_full_path'):
         
         self.desc = desc
         self.datatype = datatype
         self.suffix = suffix
         self.run_metadata = run_metadata        
         self.extension = extension
+        self.use_extension = use_extension
         self.task = task
         self.space = space
         self.echo = echo        
+        self.type = type
 
         
-    @property
-    def run_dir(self):
-        if self.run_metadata is None:
-            raise ValueError("run_metadata is not defined")
-        else:
-            return op.join(self.run_metadata.rootdir, *self.run_metadata._current_derivatives_place, self.run_metadata.session_place, self.datatype)
-        
-    @property    
-    def run_full_path(self):
-        return op.join(self.run_dir, self.run_bids_name)
             
     @classmethod
     def init_from(cls, component, **kwargs):
@@ -63,19 +55,53 @@ class Component(object):
         """
         return [cls.init_from(component, **kwargs) for component in components] 
     
-        
-
+    @property
+    def run_dir(self):
+        if self.run_metadata is None:
+            raise ValueError("run_metadata is not defined")
+        else:
+            print(f"{self.run_metadata.rootdir}, {self.run_metadata._current_derivatives_place}, {self.run_metadata.session_place}, {self.datatype}")
+            return op.join(self.run_metadata.rootdir, *self.run_metadata._current_derivatives_place, self.run_metadata.session_place, self.datatype)
+         
+    def run_full_path(self, extension = False):
+        return op.join(self.run_dir, self.run_bids_name(extension))
+    
+    def use_name(self, extension = False):
+        '''
+        the name really give to action
+        '''
+        match self.type:
+            case 'run_full_path':
+                return self.run_full_path(extension)
+            case 'run_bids_name':
+                return self.run_bids_name(extension)           
+            case _:
+                raise ValueError(f"unknown type {self.type} from {self.bids_name}")
+            
     bids_order = {
         'bold': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'dir', 'run', 'echo', 'part', 'chunk', 'space', 'desc'],
         'MP2RAGE': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'run', 'echo', 'flip', 'inv', 'part', 'chunk', 'space', 'desc'],
         'T1w': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'run', 'echo', 'part', 'chunk', 'space', 'desc'],
         'fmap': ['sub', 'ses', 'acq', 'run', 'chunk', 'space', 'desc']
-    }  
-    
-     
+    } 
+ 
+    def _bids_name_generator(self, dic, extension):
         
-    @property
-    def run_bids_name(self, extension = False):
+        ordered_dic = {key: dic[key] for key in Component.bids_order['bold'] if key in dic}
+        
+        #this true/false judgement can be nested
+        if extension or self.use_extension:
+            __extension = True
+        else:
+            __extension = False
+            
+        if __extension:
+            return f'{"_".join([f"{key}-{value}" for key, value in ordered_dic.items() if value is not None])}_{dic['suffix']}.{dic["extension"]}'
+        else:
+            return f'{"_".join([f"{key}-{value}" for key, value in ordered_dic.items() if value is not None])}_{dic['suffix']}'
+        
+           
+    def run_bids_name(self, extension = True):
    
         '''
         generage file name for run
@@ -84,33 +110,27 @@ class Component(object):
         dic.setdefault('sub', self.run_metadata.subject)
         dic.setdefault('ses', self.run_metadata.session)
         
-        def generate_name(dic, extension = False):            
+        # #this true/false judgement can be nested
+        # if extension or self.use_extension:
+        #     __extension = True
+        # else:
+        #     __extension = False
+                               
+        return self._bids_name_generator(dic, extension)   
             
-            ordered_dic = {key: dic[key] for key in Component.bids_order['bold'] if key in dic}
-            if extension:
-                return f'{"_".join([f"{key}-{value}" for key, value in ordered_dic.items() if value is not None])}_{dic['suffix']}.{dic["extension"]}'
-            else:
-                return f'{"_".join([f"{key}-{value}" for key, value in ordered_dic.items() if value is not None])}_{dic['suffix']}'
-            
-        
-        return generate_name(dic, extension = extension)      
-    
-    @property
     def bids_name(self, extension = False):
         '''
         generage file identity (run_bids_name without metadata)
         '''
-        dic = dc(self.__dict__)
-        
-        def generate_name(dic, extension = False):            
+        # #this true/false judgement can be nested
+        # if extension or self.use_extension:
+        #     __extension = True
+        # else:
+        #     __extension = False
             
-            ordered_dic = {key: dic[key] for key in Component.bids_order['bold'] if key in dic}
-            if extension:
-                return f'{"_".join([f"{key}-{value}" for key, value in ordered_dic.items() if value is not None])}_{dic['suffix']}.{dic["extension"]}'
-            else:
-                return f'{"_".join([f"{key}-{value}" for key, value in ordered_dic.items() if value is not None])}_{dic['suffix']}'            
+        dic = dc(self.__dict__)          
         
-        return generate_name(dic, extension = extension)          
+        return self._bids_name_generator(dic, extension)     
                 
 
 class Initial_component(Component):
@@ -154,23 +174,43 @@ class Work(object):
         this_run_metadata = dc(run_metadata)
         this_run_metadata._recursive_deepth += 1
         this_run_metadata._current_derivatives_place = this_run_metadata._current_derivatives_place + self.derivatives_place
-        
-            
-        if self.action is None:
-            
-            raise ValueError(f"action of {self.name} is not defined")
-        
+                
         for component in self.output_components:
             component.run_metadata = this_run_metadata
+            
+            if not op.exists(component.run_dir):
+                os.makedirs(component.run_dir)
+    
+        if run_metadata.overwright:
+            for component in self.output_components:
+                if op.exists(component.run_full_path(extension = True)):
+                    os.remove(component.run_full_path(extension = True))
+                    
+        for component in self.input_components:
+            if not op.exists(component.run_full_path(extension = True)):
+                raise ValueError(f"input component {component.run_full_path(extension = True)} of work {self.name} does not exist")       
+             
+        if self.metadata.preview:
+                            
+            for component in self.output_components:
+                
+                with open(component.run_full_path(extension = True), 'w') as f:
+                    f.write('test')
+                    
+            return 0
+            
+            
+        if self.action is None:            
+            raise ValueError(f"action of {self.bids_name} is not defined")        
                         
-        #may not work properly
         if 'run_metadata' in inspect.signature(self.action).parameters:
-            self.action(self.input_components, self.output_components, run_metadata)
+            
+            self.action([component.use_name(extension = True) for component in self.input_components], [component.use_name() for component in self.output_components], run_metadata)
         else:
-            self.action(self.input_components, self.output_components)
-
-        
-        self.action(self.input_components, self.output_components, run_metadata)
+            self.action([component.use_name(extension = True) for component in self.input_components], [component.use_name() for component in self.output_components])
+            
+        return 0
+    
         
     def add_action(self, action):
         self.action = action
@@ -302,13 +342,20 @@ class Workflow(Work):
         return wrapper
 
 class RunMetaData(object):
-    def __init__(self, rootdir, subject, datatype = None, session = None):
+    '''
+    RunMetaData is a class to store the metadata of a run
+    '''
+    def __init__(self, rootdir, subject, datatype = None, session = None, logger = None, overwright = None, preview = False):
+        
         self.rootdir = rootdir
         self.subject = subject
         self.session = session
         self.datatype = datatype
         self._current_derivatives_place = []
         self._recursive_deepth = 0
+        self.logger = logger
+        self.overwright = overwright
+        self.preview = preview
                 
     
     @property

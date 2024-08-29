@@ -1,17 +1,20 @@
-from base_3 import *
+from base import *
 from config import *
 import action
 
 
 
-test_meta_data = RunMetaData('/rootdir', 's001')
+test_meta_data = RunMetaData('/home/sbc/data', 's001', preview = True) 
 echos = range(4)
 
-origin_epi_list = Component.init_multi_components([{'echo': echo_number} for echo_number in echos], space = 'origin', desc = 'origin', suffix = 'bold')
+origin_epi_list = Component.init_multi_components([{'echo': echo_number} for echo_number in echos], space = 'origin', desc = 'origin', suffix = 'bold', datatype = 'func', run_metadata = test_meta_data)
 initial_json_list = Component.init_multi_components_from(origin_epi_list, desc = 'origin', extension = 'json')
-
+ 
 slicetime_list = Component.init_multi_components_from(origin_epi_list, desc = 'slicetime', extension = '1D')
-get_slicetime = [Work(f'get_slicetime_{echo_number}', [origin_epi_list[echo_number]], [slicetime_list[echo_number]], action= get_slicetime_func) for echo_number in echos]
+get_slicetime = [Work(f'get_slicetime_{echo_number}', [origin_epi_list[echo_number]], [slicetime_list[echo_number]], action= action.get_slicetime, derivatives_place=['test'], ) for echo_number in echos]
+
+for work in get_slicetime:
+    work.run(test_meta_data)
 
 
 
