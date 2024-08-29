@@ -141,6 +141,13 @@ class Component(object):
         if self.run_metadata.preview:
             with open(self.run_full_path(extension = True), 'w') as f:
                 f.write('test')            
+    
+    def remove_file(self):
+        '''
+        delete file
+        '''
+        if op.exists(self.run_full_path(extension = True)):
+            os.remove(self.run_full_path(extension = True))
 
 class Initial_component(Component):
     pass
@@ -153,13 +160,17 @@ class Work(object):
     def __init__(self, name, input_components = None, output_components = None, action = None, derivatives_place = None):
         
         self.name = name
-        if not isinstance(input_components, list):
-            raise ValueError(f"input_nodes of {self.name} should be a list")
+        if not isinstance(self, Workflow) and not isinstance(input_components, list):
+            raise ValueError(f"input_nodes of {self.name} should be a list")        
+        elif not isinstance(input_components, set) and isinstance(self, Workflow):                
+            raise ValueError(f"input_nodes of {self.name} should be a set")                
         else:
             self.input_components = input_components
         
-        if not isinstance(output_components, list):
-            raise ValueError(f"output_nodes of {self.name} should be a list")
+        if not isinstance(self, Workflow) and not isinstance(output_components, list):
+            raise ValueError(f"input_nodes of {self.name} should be a list")        
+        elif not isinstance(output_components, set) and isinstance(self, Workflow):                
+            raise ValueError(f"input_nodes of {self.name} should be a set")  
         else:
             self.output_components = output_components
             
@@ -192,8 +203,7 @@ class Work(object):
     
         if run_metadata.overwright:
             for component in self.output_components:
-                if op.exists(component.run_full_path(extension = True)):
-                    os.remove(component.run_full_path(extension = True))
+                component.remove_file()
                     
         for component in self.input_components:
             if not op.exists(component.run_full_path(extension = True)):
@@ -228,12 +238,13 @@ class Work(object):
 
 class Workflow(Work):
     
-    def __init__(self, name, derivatives_place, worklist = None, output_component_mannual = None):
+    def __init__(self, name, work_list = None, derivatives_place = None, output_component_mannual = None):
         
-        if worklist is None:
+        if work_list is None:
             self.worklist = []
         else:
-            self.worklist = worklist
+            self.work_list = work_list
+            
                         
         input_components = self.get_input_components
         output_components = self.get_output_components
@@ -302,14 +313,14 @@ class Workflow(Work):
         get output components of a workflow
         this will return a set of components that are the output of any work that contains the workflow 
         '''
-        return {component for work in self.worklist for component in work.output_components}
+        return {component for work in self.work_list for component in work.output_components}
     
     @property
-    def get_input_components(self, component):
+    def get_input_components(self):
         ''' 
-        get input components of a component
+        get input components of a workflow
         '''
-        all_input_component = {work.input_components for work in self.worklist if component in work.input_components}
+        all_input_component = {component for work in self.work_list for component in work.input_components}
         
         return all_input_component.difference(self.get_output_components)
         
@@ -319,10 +330,10 @@ class Workflow(Work):
         
         this_run_metadata = dc(run_metadata)
         this_run_metadata._recursive_deepth += 1
-        this_run_metadata.current_derivatives_place = this_run_metadata.current_derivatives_place + self.derivatives_place
+        this_run_metadata._current_derivatives_place = this_run_metadata._current_derivatives_place + self.derivatives_place
+        print(f"{this_run_metadata._recursive_deepth}   {this_run_metadata._current_derivatives_place}")
         
-        
-        for work in self.worklist:
+        for work in self.work_list:
               
             work.run(this_run_metadata)  
                 
@@ -356,7 +367,10 @@ class RunMetaData(object):
     '''
     def __init__(self, rootdir, subject, datatype = None, session = None, logger = None, overwright = None, preview = False):
         
-        self.rootdir = rootdir
+        if not op.exists(rootdir):
+            raise ValueError(f"rootdir {rootdir} in RunMetaData does not exist")
+        else:
+            self.rootdir = rootdir
         self.subject = subject
         self.session = session
         self.datatype = datatype
