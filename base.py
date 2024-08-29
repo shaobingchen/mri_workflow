@@ -60,7 +60,6 @@ class Component(object):
         if self.run_metadata is None:
             raise ValueError("run_metadata is not defined")
         else:
-            print(f"{self.run_metadata.rootdir}, {self.run_metadata._current_derivatives_place}, {self.run_metadata.session_place}, {self.datatype}")
             return op.join(self.run_metadata.rootdir, *self.run_metadata._current_derivatives_place, self.run_metadata.session_place, self.datatype)
          
     def run_full_path(self, extension = False):
@@ -96,6 +95,8 @@ class Component(object):
             __extension = False
             
         if __extension:
+            if extension is None:
+                raise ValueError(f"extension of {self.bids_name} is not defined, but needed")
             return f'{"_".join([f"{key}-{value}" for key, value in ordered_dic.items() if value is not None])}_{dic['suffix']}.{dic["extension"]}'
         else:
             return f'{"_".join([f"{key}-{value}" for key, value in ordered_dic.items() if value is not None])}_{dic['suffix']}'
@@ -131,7 +132,15 @@ class Component(object):
         dic = dc(self.__dict__)          
         
         return self._bids_name_generator(dic, extension)     
-                
+    
+    
+    def make_test_file(self):
+        '''
+        make a test file for preview
+        '''
+        if self.run_metadata.preview:
+            with open(self.run_full_path(extension = True), 'w') as f:
+                f.write('test')            
 
 class Initial_component(Component):
     pass
@@ -190,7 +199,7 @@ class Work(object):
             if not op.exists(component.run_full_path(extension = True)):
                 raise ValueError(f"input component {component.run_full_path(extension = True)} of work {self.name} does not exist")       
              
-        if self.metadata.preview:
+        if run_metadata.preview:
                             
             for component in self.output_components:
                 
