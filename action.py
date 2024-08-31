@@ -1,7 +1,14 @@
+import subprocess
+import shlex
+from src.mri_workflow.base import Component, Work, Workflow, RunMetaData, CommandWork
+import os
+import shutil
 
 
-def get_slicetime(input_component, output_component):
-    
-    json_file = input_component[0].run_bidsname
+
+
+def copy_file(input_file, output_file):
+    shutil.copyfile(input_file, output_file)
+
     
     

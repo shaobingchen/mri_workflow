@@ -5,7 +5,47 @@ from itertools import product
 from copy import deepcopy as dc
 import inspect
 import logging
+import shlex
+import subprocess
 
+
+class RunMetaData(object):
+    '''
+    RunMetaData is a class to store the metadata of a run
+    '''
+    def __init__(self, rootdir, subject, session = None, logger = None, overwright = None, preview = False):
+        
+        if not op.exists(rootdir):
+            raise ValueError(f"rootdir {rootdir} in RunMetaData does not exist")
+        else:
+            self.rootdir = rootdir
+        self.subject = subject
+        self.session = session
+        self._current_derivatives_place = []
+        self._recursive_deepth = 0
+        self.logger = logger
+        self.overwright = overwright
+        self.preview = preview
+        
+        _logger = logging.getLogger(logger)
+        _logger.info(f"create RunMetaData with\n rootdir {rootdir}\n subject {subject}\n session {session}\n logger {logger}\n overwright {overwright}\n preview {preview}")
+                
+    
+    @property
+    def subjectdir(self):
+        return op.join(self.rootdir, self.subject)
+    @property
+    def sessiondir(self):
+        if self.session is None:
+            raise ValueError("session is not defined")
+        else:
+            return op.join(self.rootdir, self.subject, self.session)
+    @property
+    def session_place(self):
+        if self.session is None:
+            return op.join(self.subject)
+        else:
+            return op.join(self.subject, self.session)
 class Component(object):
     def __init__(self, desc = None, suffix = None, datatype = None, run_metadata = None, use_extension = False, extension = None, task = None, space = None, echo = None, type = 'run_full_path'):
         
@@ -80,7 +120,7 @@ class Component(object):
         'bold': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'dir', 'run', 'echo', 'part', 'chunk', 'space', 'desc'],
         'MP2RAGE': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'run', 'echo', 'flip', 'inv', 'part', 'chunk', 'space', 'desc'],
         'T1w': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'run', 'echo', 'part', 'chunk', 'space', 'desc'],
-        'fmap': ['sub', 'ses', 'acq', 'run', 'chunk', 'space', 'desc']
+        'fmap': ['sub', 'ses', 'acq', 'run', 'gre', 'chunk', 'space', 'desc']
     } 
  
     def _bids_name_generator(self, dic, extension):
@@ -192,8 +232,8 @@ class Work(object):
     @property    
     def all_components(self) -> set:
         return set(self.input_components + self.output_components)
-        
-    def run(self, run_metadata):
+    
+    def _pre_run(self, run_metadata):
         
         this_run_metadata = dc(run_metadata)
         this_run_metadata._recursive_deepth += 1
@@ -209,49 +249,151 @@ class Work(object):
             if not op.exists(component.run_dir):
                 os.makedirs(component.run_dir)
                 logger.warning(f"create directory {component.run_dir}")
-    
-        if run_metadata.overwright:
-            for component in self.output_components:
-                component.remove_file()
-                logger.warning(f"remove pre-exist file {component.run_full_path(extension = True)} because overwrite has been setted")
+                
+        for component in self.output_components:
+            if op.exists(component.run_full_path(extension = True)):
+                logger.warning(f"file {component.run_full_path(extension = True)} exist before running.")
+                if run_metadata.overwright:            
+                    component.remove_file()
+                    logger.warning(f"remove pre-exist file {component.run_full_path(extension = True)} because overwrite has been setted")
                     
         for component in self.input_components:
             if not op.exists(component.run_full_path(extension = True)):
                 raise ValueError(f"input component {component.run_full_path(extension = True)} of work {self.name} does not exist")       
-             
+        
+        if self.action is None:            
+            raise ValueError(f"action of {self.bids_name} is not defined")               
+        
+        return this_run_metadata
+        
+    def run(self, run_metadata):
+        
+        this_run_metadata = self._pre_run(run_metadata)
+        
+        logger = logging.getLogger(run_metadata.logger)
+            
+            
         if run_metadata.preview:
                             
             for component in self.output_components:
                 
                 component.make_test_file()
                 logger.info(f"make test file {component.run_full_path(extension = True)}")
-                    
-            return 0
+                              
+        elif 'run_metadata' in inspect.signature(self.action).parameters:
+            
+            _run_input_components = [component.use_name(extension = True) for component in self.input_components]
+            _run_output_components = [component.use_name() for component in self.output_components]
+            
+            logger.info(f"start running action {self.action.__name__} {_run_input_components, _run_output_components} of work {self.name} with run metadata")
+            
+            self.action(_run_input_components, _run_output_components, this_run_metadata)
+            
+            logger.info(f"finish running action {self.action.__name__} of work {self.name}")
             
             
-        if self.action is None:            
-            raise ValueError(f"action of {self.bids_name} is not defined")        
+        elif 'command_list' in inspect.signature(self.action).parameters:
+            
+            def _process_item(self, item):
+                
+                if isinstance(item, Component):
+                    if item in self.input_list:
+                        return item.use_name(extension=True)
+                    elif item in self.output_list:
+                        return item.use_name()
+                elif isinstance(item, str):                    
+                    return item
+                else:
+                    raise ValueError(f"item {item} of {self.name} is not a Component or a string")
+            
+            _run_command_list = [_process_item(item) for item in self.command_list]
+            
+            logger.info(f"start running action {self.action.__name__} {[_run_command_list]} of work {self.name} with command list")
+            
                         
-        if 'run_metadata' in inspect.signature(self.action).parameters:
-            
-            logger.info(f"start running action {self.action.__name__} {[component.use_name(extension = True) for component in self.input_components], [component.use_name() for component in self.output_components]} of work {self.name} with run metadata")
-            
-            self.action([component.use_name(extension = True) for component in self.input_components], [component.use_name() for component in self.output_components], this_run_metadata)
-            
-            logger.info(f"finish running action {self.action.__name__} of work {self.name}")
         else:
-            logger.info(f"start running action {self.action.__name__} {[component.use_name(extension = True) for component in self.input_components], [component.use_name() for component in self.output_components]} of work {self.name}")
             
-            self.action([component.use_name(extension = True) for component in self.input_components], [component.use_name() for component in self.output_components])
+            _run_input_components = [component.use_name(extension = True) for component in self.input_components]
+            _run_output_components = [component.use_name() for component in self.output_components]
+            
+            logger.info(f"start running action {self.action.__name__} {_run_input_components, _run_output_components} of work {self.name}")
+            
+            self.action(_run_input_components, _run_output_components)
             
             logger.info(f"finish running action {self.action.__name__} of work {self.name}")
             
-        return 0
     
         
     def add_action(self, action):
         self.action = action
     
+class CommandWork(Work):
+    '''
+    class to wrap command line as a work
+    '''
+    
+    def __init__(self, name, input_components=None, output_components=None, action=None, derivatives_place=None, command_list = None):
+        
+        super().__init__(name, input_components, output_components, action, derivatives_place)
+        if command_list is None:
+            self.command_list = []
+        else:
+            self.command_list = command_list
+        
+        self.action = self._run_shell_command
+        
+        
+    def _run_shell_command(command_list: list, run_metadata: RunMetaData):
+    
+        command = shlex.join(command_list)
+        logger = logging.getLogger(run_metadata.logger)
+        logger.info(f"start running command {command} inside _run_shell_command")
+        
+        
+        try:
+            process = subprocess.Popen(
+                command_list,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,  # Capture stderr separately
+                text=True  # Return strings instead of bytes
+            )
+            
+            # Wait for the process to complete and capture output
+            stdout, stderr = process.communicate()
+            
+            for line in stdout.splitlines:
+                logger.debug(line)
+                
+            for line in stderr.splitlines:
+                logger.error(line)
+            
+            # Check the return code
+            if process.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    process.returncode, command, stdout, stderr)
+
+
+        except subprocess.CalledProcessError as e:
+            # Handle command execution errors
+            raise Exception(
+                f"""
+                Error executing command: {command}
+                Return code: {e.returncode}
+                Error output: {e.stderr}
+                """
+            )
+        except OSError as e:
+            # Handle OS-level errors (e.g., command not found)
+            raise Exception(f"OS error when trying to execute {command}: {e}")
+
+        except Exception as e:
+            # Handle all other exceptions
+            raise Exception(f"unexpected error executing command: {command}: {e}")
+        
+        finally:
+            logger.info(f"finish running command {command} inside _run_shell_command")
+            
+        
     
 
 class Workflow(Work):
@@ -381,43 +523,6 @@ class Workflow(Work):
             return func(self, *args, ** kwargs)
         return wrapper
 
-class RunMetaData(object):
-    '''
-    RunMetaData is a class to store the metadata of a run
-    '''
-    def __init__(self, rootdir, subject, session = None, logger = None, overwright = None, preview = False):
-        
-        if not op.exists(rootdir):
-            raise ValueError(f"rootdir {rootdir} in RunMetaData does not exist")
-        else:
-            self.rootdir = rootdir
-        self.subject = subject
-        self.session = session
-        self._current_derivatives_place = []
-        self._recursive_deepth = 0
-        self.logger = logger
-        self.overwright = overwright
-        self.preview = preview
-        
-        _logger = logging.getLogger(logger)
-        _logger.info(f"create RunMetaData with\n rootdir {rootdir}\n subject {subject}\n session {session}\n logger {logger}\n overwright {overwright}\n preview {preview}")
-                
-    
-    @property
-    def subjectdir(self):
-        return op.join(self.rootdir, self.subject)
-    @property
-    def sessiondir(self):
-        if self.session is None:
-            raise ValueError("session is not defined")
-        else:
-            return op.join(self.rootdir, self.subject, self.session)
-    @property
-    def session_place(self):
-        if self.session is None:
-            return op.join(self.subject)
-        else:
-            return op.join(self.subject, self.session)
         
         
         
