@@ -1,4 +1,4 @@
-from base import *
+
 
 def get_slicetime(input_component, output_component):
     

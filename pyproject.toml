@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mri_workflow"
+version = "0.0.0beta"
+authors = [
+    {name="shaobingchen", email="shaobingchen0012@gmail.com"},
+]
+description = "A well orgnized way and tool to write a mri data analysis workflow"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "github.com/shaobingchen/mri_workflow"

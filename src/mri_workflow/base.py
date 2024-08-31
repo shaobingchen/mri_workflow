@@ -4,6 +4,7 @@ import networkx as nx
 from itertools import product
 from copy import deepcopy as dc
 import inspect
+import logging
 
 class Component(object):
     def __init__(self, desc = None, suffix = None, datatype = None, run_metadata = None, use_extension = False, extension = None, task = None, space = None, echo = None, type = 'run_full_path'):
@@ -17,9 +18,7 @@ class Component(object):
         self.task = task
         self.space = space
         self.echo = echo        
-        self.type = type
-
-        
+        self.type = type        
             
     @classmethod
     def init_from(cls, component, **kwargs):
@@ -138,9 +137,9 @@ class Component(object):
         '''
         make a test file for preview
         '''
-        if self.run_metadata.preview:
-            with open(self.run_full_path(extension = True), 'w') as f:
-                f.write('test')            
+        with open(self.run_full_path(extension = True), 'w') as f:
+            f.write('test')            
+            
     
     def remove_file(self):
         '''
@@ -160,18 +159,12 @@ class Work(object):
     def __init__(self, name, input_components = None, output_components = None, action = None, derivatives_place = None):
         
         self.name = name
-        if not isinstance(self, Workflow) and not isinstance(input_components, list):
-            raise ValueError(f"input_nodes of {self.name} should be a list")        
-        elif not isinstance(input_components, set) and isinstance(self, Workflow):                
-            raise ValueError(f"input_nodes of {self.name} should be a set")                
-        else:
+                      
+        if self._test_component_list(input_components):
             self.input_components = input_components
+            
         
-        if not isinstance(self, Workflow) and not isinstance(output_components, list):
-            raise ValueError(f"input_nodes of {self.name} should be a list")        
-        elif not isinstance(output_components, set) and isinstance(self, Workflow):                
-            raise ValueError(f"input_nodes of {self.name} should be a set")  
-        else:
+        if self._test_component_list(output_components):
             self.output_components = output_components
             
         self.action = action
@@ -184,6 +177,17 @@ class Work(object):
                 raise ValueError(f"derivatives_place of {self.name} should be a list")
             else:
                 self.derivatives_place = derivatives_place
+    
+                
+    def _test_component_list(self, list_or_set):
+        if not isinstance(self, Workflow) and not isinstance(list_or_set, list):
+            raise ValueError(f"{self.name} is not a Workflow,  components container should be a list")        
+        elif not isinstance(list_or_set, set) and isinstance(self, Workflow):                
+            raise ValueError(f"{self.name} is a Workflow, component container of should be a set")
+        
+        return True 
+    
+        
         
     @property    
     def all_components(self) -> set:
@@ -194,16 +198,22 @@ class Work(object):
         this_run_metadata = dc(run_metadata)
         this_run_metadata._recursive_deepth += 1
         this_run_metadata._current_derivatives_place = this_run_metadata._current_derivatives_place + self.derivatives_place
+        
+        logger = logging.getLogger(run_metadata.logger)
+        logger.info(f"run {self.name}, recursive deepth is {this_run_metadata._recursive_deepth}")
+        
                 
         for component in self.output_components:
             component.run_metadata = this_run_metadata
             
             if not op.exists(component.run_dir):
                 os.makedirs(component.run_dir)
+                logger.warning(f"create directory {component.run_dir}")
     
         if run_metadata.overwright:
             for component in self.output_components:
                 component.remove_file()
+                logger.warning(f"remove pre-exist file {component.run_full_path(extension = True)} because overwrite has been setted")
                     
         for component in self.input_components:
             if not op.exists(component.run_full_path(extension = True)):
@@ -213,8 +223,8 @@ class Work(object):
                             
             for component in self.output_components:
                 
-                with open(component.run_full_path(extension = True), 'w') as f:
-                    f.write('test')
+                component.make_test_file()
+                logger.info(f"make test file {component.run_full_path(extension = True)}")
                     
             return 0
             
@@ -224,9 +234,17 @@ class Work(object):
                         
         if 'run_metadata' in inspect.signature(self.action).parameters:
             
-            self.action([component.use_name(extension = True) for component in self.input_components], [component.use_name() for component in self.output_components], run_metadata)
+            logger.info(f"start running action {self.action.__name__} {[component.use_name(extension = True) for component in self.input_components], [component.use_name() for component in self.output_components]} of work {self.name} with run metadata")
+            
+            self.action([component.use_name(extension = True) for component in self.input_components], [component.use_name() for component in self.output_components], this_run_metadata)
+            
+            logger.info(f"finish running action {self.action.__name__} of work {self.name}")
         else:
+            logger.info(f"start running action {self.action.__name__} {[component.use_name(extension = True) for component in self.input_components], [component.use_name() for component in self.output_components]} of work {self.name}")
+            
             self.action([component.use_name(extension = True) for component in self.input_components], [component.use_name() for component in self.output_components])
+            
+            logger.info(f"finish running action {self.action.__name__} of work {self.name}")
             
         return 0
     
@@ -331,7 +349,9 @@ class Workflow(Work):
         this_run_metadata = dc(run_metadata)
         this_run_metadata._recursive_deepth += 1
         this_run_metadata._current_derivatives_place = this_run_metadata._current_derivatives_place + self.derivatives_place
-        print(f"{this_run_metadata._recursive_deepth}   {this_run_metadata._current_derivatives_place}")
+        logger = logging.getLogger(run_metadata.logger)
+        logger.info(f"run {self.name}, recursive deepth is {this_run_metadata._recursive_deepth}")
+        logger.info(f"work_list is {[work.name for work in self.work_list]}")
         
         for work in self.work_list:
               
@@ -365,7 +385,7 @@ class RunMetaData(object):
     '''
     RunMetaData is a class to store the metadata of a run
     '''
-    def __init__(self, rootdir, subject, datatype = None, session = None, logger = None, overwright = None, preview = False):
+    def __init__(self, rootdir, subject, session = None, logger = None, overwright = None, preview = False):
         
         if not op.exists(rootdir):
             raise ValueError(f"rootdir {rootdir} in RunMetaData does not exist")
@@ -373,12 +393,14 @@ class RunMetaData(object):
             self.rootdir = rootdir
         self.subject = subject
         self.session = session
-        self.datatype = datatype
         self._current_derivatives_place = []
         self._recursive_deepth = 0
         self.logger = logger
         self.overwright = overwright
         self.preview = preview
+        
+        _logger = logging.getLogger(logger)
+        _logger.info(f"create RunMetaData with\n rootdir {rootdir}\n subject {subject}\n session {session}\n logger {logger}\n overwright {overwright}\n preview {preview}")
                 
     
     @property
@@ -397,13 +419,7 @@ class RunMetaData(object):
         else:
             return op.join(self.subject, self.session)
         
-            
-    @property
-    def datatypedir(self):
-        if self.session is None:
-            return op.join(self.rootdir, self.subject, self.datatype)
-        else:   
-            return op.join(self.rootdir, self.subject, self.session, self.datatype)
+        
         
         
 

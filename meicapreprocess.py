@@ -1,10 +1,11 @@
-from base import *
+from src.mri_workflow.base import Component, Work, Workflow, RunMetaData
 from config import *
 import action
+import logging
 
 
 
-test_meta_data = RunMetaData('/home/sbc/data/test', 's001', preview = True) 
+test_meta_data = RunMetaData('/home/sbc/data/test', 's001', preview = True, logger='test_log') 
 echos = range(4)
 
 origin_epi_list = Component.init_multi_components([{'echo': echo_number} for echo_number in echos], space = 'origin', desc = 'origin', suffix = 'bold', datatype = 'func', extension = 'nii', run_metadata = test_meta_data)
