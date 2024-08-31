@@ -1,6 +1,6 @@
 import subprocess
 import shlex
-from src.mri_workflow.base import Component, Work, Workflow, RunMetaData, CommandWork
+from src.neuroworkflow.base import Component, Work, Workflow, RunMetaData, CommandWork
 import os
 import shutil
 

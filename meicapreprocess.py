@@ -1,4 +1,4 @@
-from src.mri_workflow.base import Component, Work, Workflow, RunMetaData, CommandWork
+from src.neuroworkflow.base import Component, Work, Workflow, RunMetaData, CommandWork
 import action
 from config import *
 import action
