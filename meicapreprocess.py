@@ -1,14 +1,14 @@
 from src.neuroworkflow.base import Component, Work, Workflow, RunMetaData, CommandWork
-import action
+import actions
 from config import *
-import action
+import actions
 import logging
 import time
 
 
 
 
-test_meta_data = RunMetaData('/home/sbc/data/test_dataset', '001', preview = True, logger = 'test_log')
+test_meta_data = RunMetaData('/home/sbc/data/test_dataset', '001', logger = 'test_log')
 
 
 logger = logging.getLogger('test_log')
@@ -27,16 +27,16 @@ copied_origin_epi_list = Component.init_multi_components_from(origin_epi_list, d
 copy_epis = [Work(f'copy_epi_{echo_number + 1}',
                   [origin_epi_list[echo_number]],
                   [copied_origin_epi_list[echo_number]],
-                  action = action.copy_file
+                  action = actions.copy_file
                   ) for echo_number in echos]
 
 set_matrix = [CommandWork(f'set_matrix_{echo_number + 1}',
                           [copied_origin_epi_list[echo_number]],
                           [],
-                          command_list=['nifti_tool', '-mod_hdr', '-mod_field', 'sform_code', '1', '-mod_field', 'qform_code', '1', '-infiles', [copied_origin_epi_list[echo_number]]]
+                          command_list=['nifti_tool', '-mod_hdr', '-mod_field', 'sform_code', '1', '-mod_field', 'qform_code', '1', '-infiles', copied_origin_epi_list[echo_number], '-overwrite']
                           ) for echo_number in echos]
 
-despiked_epi_list = Component.init_multi_components_from(copied_origin_epi_list, desc = 'despiked')
+despiked_epi_list = Component.init_multi_components_from(copied_origin_epi_list, desc = 'despiked', use_extension = False)
 
 despike = [CommandWork(f'despike_epi_{echo_number + 1}',
                        [copied_origin_epi_list[echo_number]],
@@ -44,17 +44,32 @@ despike = [CommandWork(f'despike_epi_{echo_number + 1}',
                        ['3dDespike', '-overwrite', '-prefix', despiked_epi_list[echo_number], copied_origin_epi_list[echo_number]]
                        )for echo_number in echos]
 
-base_mask_list = Component.init_multi_components_from(despiked_epi_list, desc = 'base_mask', extension = 'nii')
+base_mask_echo1 = Component.init_from(despiked_epi_list[0],
+                                      desc = 'motionbase'
+                                      )
 
-generate_base = [CommandWork(f'generate_base_{echo_number + 1}',
-                             [despiked_epi_list[echo_number]],
-                             [],
-                             
-                             ) for echo_number in echos]
+motion_base = CommandWork(f'generate_motion_base',
+                          [despiked_epi_list[0]],
+                          [base_mask_echo1],
+                          ['3dcalc', '-a', despiked_epi_list[0], '-expr', 'a', '-prefix', base_mask_echo1]
+                          )
+
+motion_estimate_dfile = Component.init_from(despiked_epi_list[0],
+                                            desc = 'motion_estimate',
+                                            extension = '1D'
+                                            )
+
+motion_estimate_matrix = Component.init_from(despiked_epi_list[0], desc = 'motion_estimate', extension = 'aff12.1D')
+
+motion_estmite = CommandWork(f'motion_estimate',
+                             [despiked_epi_list[0]],
+                             [motion_estimate_dfile, motion_estimate_matrix],
+                             ['3dvolreg', '-tshift', 'quintic', '-1Dmatrix_save', motion_estimate_matrix, '-1Dfile', motion_estimate_dfile, '-prefix', motion_estimate_matrix, '-base', base_mask_echo1, despiked_epi_list[0]]
+                             ) 
 
 
-
-
+preprocess = Workflow('preprocess', copy_epis + set_matrix + despike + [motion_base, motion_estmite], derivatives_place = ['mepreprocess'])
+preprocess.run(test_meta_data)
 
 
 

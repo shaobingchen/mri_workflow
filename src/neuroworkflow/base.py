@@ -33,19 +33,19 @@ class RunMetaData(object):
     
     @property
     def subjectdir(self):
-        return op.join(self.rootdir, self.subject)
+        return op.join(self.rootdir, f'sub-{self.subject}')
     @property
     def sessiondir(self):
         if self.session is None:
             raise ValueError("session is not defined")
         else:
-            return op.join(self.rootdir, self.subject, self.session)
+            return op.join(self.rootdir, f'sub-{self.subject}', f'ses{self.session}')
     @property
     def session_place(self):
         if self.session is None:
-            return op.join(self.subject)
+            return op.join(f'sub-{self.subject}')
         else:
-            return op.join(self.subject, self.session)
+            return op.join(f'sub-{self.subject}', f'ses{self.session}')
 class Component(object):
     def __init__(self, desc = None, suffix = None, datatype = None, run_metadata = None, use_extension = False, extension = None, task = None, space = None, echo = None, type = 'run_full_path'):
         
@@ -265,6 +265,8 @@ class Work(object):
             raise ValueError(f"action of {self.bids_name} is not defined")               
         
         return this_run_metadata
+            
+            
         
     def run(self, run_metadata):
         
@@ -279,6 +281,35 @@ class Work(object):
                 
                 component.make_test_file()
                 logger.info(f"make test file {component.run_full_path(extension = True)}")
+
+        elif self.action.__name__  == '_run_shell_command':
+            
+            def _process_item(self, item):
+                
+                if isinstance(item, Component):
+                    if item in self.input_components:
+                        return item.use_name(extension=True)
+                    elif item in self.output_components:
+                        return item.use_name()
+                elif isinstance(item, str):                    
+                    return item
+                else:
+                    raise ValueError(f"item {item} of {self.name} is not a Component or a string")
+            
+            _run_command_list = [_process_item(self, item) for item in self.command_list]
+            
+            logger.info(f"start running action {self.action.__name__} {[_run_command_list]} of work {self.name} with command list")
+            
+            self.action(_run_command_list, this_run_metadata)
+            # try:
+            #     self.action(_run_command_list, this_run_metadata)
+            # except Exception as e:
+                    
+            #         logging.getLogger(run_metadata.logger).error(f"error when running {self.name} with error {e}")
+                            
+            #         raise RuntimeError(f"error when running {self.name} with error \n {e}")
+            
+            logger.info(f"finish running action {self.action.__name__} of work {self.name}")
                               
         elif 'run_metadata' in inspect.signature(self.action).parameters:
             
@@ -288,29 +319,17 @@ class Work(object):
             logger.info(f"start running action {self.action.__name__} {_run_input_components, _run_output_components} of work {self.name} with run metadata")
             
             self.action(_run_input_components, _run_output_components, this_run_metadata)
+            # try:
+            #     self.action(_run_input_components, _run_output_components, this_run_metadata)
+            # except Exception as e:
+                
+            #     logging.getLogger(run_metadata.logger).error(f"error when running {self.name} with error {e}")
+                        
+            #     raise RuntimeError(f"error when running {self.name} with error {e}")
             
             logger.info(f"finish running action {self.action.__name__} of work {self.name}")
             
-            
-        elif 'command_list' in inspect.signature(self.action).parameters:
-            
-            def _process_item(self, item):
-                
-                if isinstance(item, Component):
-                    if item in self.input_list:
-                        return item.use_name(extension=True)
-                    elif item in self.output_list:
-                        return item.use_name()
-                elif isinstance(item, str):                    
-                    return item
-                else:
-                    raise ValueError(f"item {item} of {self.name} is not a Component or a string")
-            
-            _run_command_list = [_process_item(item) for item in self.command_list]
-            
-            logger.info(f"start running action {self.action.__name__} {[_run_command_list]} of work {self.name} with command list")
-            
-                        
+                                
         else:
             
             _run_input_components = [component.use_name(extension = True) for component in self.input_components]
@@ -319,7 +338,15 @@ class Work(object):
             logger.info(f"start running action {self.action.__name__} {_run_input_components, _run_output_components} of work {self.name}")
             
             self.action(_run_input_components, _run_output_components)
-            
+            # try:
+            #     self.action(_run_input_components, _run_output_components)
+                
+            # except Exception as e:
+                
+            #     logging.getLogger(run_metadata.logger).error(f"error when running {self.name} with error {e}")
+                        
+            #     raise RuntimeError(f"error when running {self.name} with error {e}")
+                
             logger.info(f"finish running action {self.action.__name__} of work {self.name}")
             
     
@@ -332,18 +359,16 @@ class CommandWork(Work):
     class to wrap command line as a work
     '''
     
-    def __init__(self, name, input_components=None, output_components=None, action=None, derivatives_place=None, command_list = None):
+    def __init__(self, name, input_components=None, output_components=None, command_list = None, derivatives_place=None):
         
-        super().__init__(name, input_components, output_components, action, derivatives_place)
+        super().__init__(name, input_components, output_components, self._run_shell_command, derivatives_place)
         if command_list is None:
             self.command_list = []
         else:
             self.command_list = command_list
         
-        self.action = self._run_shell_command
         
-        
-    def _run_shell_command(command_list: list, run_metadata: RunMetaData):
+    def _run_shell_command(self, command_list: list, run_metadata: RunMetaData):
     
         command = shlex.join(command_list)
         logger = logging.getLogger(run_metadata.logger)
@@ -361,11 +386,11 @@ class CommandWork(Work):
             # Wait for the process to complete and capture output
             stdout, stderr = process.communicate()
             
-            for line in stdout.splitlines:
+            for line in stdout.splitlines():
                 logger.debug(line)
                 
-            for line in stderr.splitlines:
-                logger.error(line)
+            for line in stderr.splitlines():
+                logger.debug(line) #tools like afni use stderr print normal information
             
             # Check the return code
             if process.returncode != 0:
@@ -392,8 +417,29 @@ class CommandWork(Work):
         
         finally:
             logger.info(f"finish running command {command} inside _run_shell_command")
-            
         
+        
+        # process = subprocess.Popen(
+        #     command_list,
+        #     stdout=subprocess.PIPE,
+        #     stderr=subprocess.PIPE,  # Capture stderr separately
+        #     text=True  # Return strings instead of bytes
+        # )
+        
+        # # Wait for the process to complete and capture output
+        # stdout, stderr = process.communicate()
+        
+        # for line in stdout.splitlines():
+        #     logger.debug(line)
+            
+        # for line in stderr.splitlines():
+        #     logger.debug(line)
+        
+        # # Check the return code
+        # if process.returncode != 0:
+        #     raise subprocess.CalledProcessError(
+        #         process.returncode, command, stdout, stderr)
+    
     
 
 class Workflow(Work):
