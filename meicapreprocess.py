@@ -8,7 +8,7 @@ import time
 
 
 
-test_meta_data = RunMetaData('/home/sbc/data/test_dataset', '001', logger = 'test_log')
+test_meta_data = RunMetaData('/home/sbc/data/test_dataset', '001', logger = 'test_log', skip_exist= True)
 
 
 logger = logging.getLogger('test_log')
@@ -36,7 +36,7 @@ set_matrix = [CommandWork(f'set_matrix_{echo_number + 1}',
                           command_list=['nifti_tool', '-mod_hdr', '-mod_field', 'sform_code', '1', '-mod_field', 'qform_code', '1', '-infiles', copied_origin_epi_list[echo_number], '-overwrite']
                           ) for echo_number in echos]
 
-despiked_epi_list = Component.init_multi_components_from(copied_origin_epi_list, desc = 'despiked', use_extension = False)
+despiked_epi_list = Component.init_multi_components_from(copied_origin_epi_list, desc = 'despiked', extension = 'nii.gz', use_extension = True)
 
 despike = [CommandWork(f'despike_epi_{echo_number + 1}',
                        [copied_origin_epi_list[echo_number]],
@@ -61,11 +61,17 @@ motion_estimate_dfile = Component.init_from(despiked_epi_list[0],
 
 motion_estimate_matrix = Component.init_from(despiked_epi_list[0], desc = 'motion_estimate', extension = 'aff12.1D')
 
+
 motion_estmite = CommandWork(f'motion_estimate',
-                             [despiked_epi_list[0]],
+                             [base_mask_echo1, despiked_epi_list[0]],
                              [motion_estimate_dfile, motion_estimate_matrix],
-                             ['3dvolreg', '-tshift', 'quintic', '-1Dmatrix_save', motion_estimate_matrix, '-1Dfile', motion_estimate_dfile, '-prefix', motion_estimate_matrix, '-base', base_mask_echo1, despiked_epi_list[0]]
+                             ['3dvolreg', '-tshift', 'quintic', '-1Dmatrix_save', motion_estimate_matrix, '-1Dfile', motion_estimate_dfile, '-prefix', motion_estimate_matrix, '-base', base_mask_echo1 ,despiked_epi_list[0]]
                              ) 
+
+# motion_plot_file = Component.init_from(motion_estimate_dfile, desc = 'plotmotion', extension = '1D')
+
+# motion_plot = CommandWork(f'motion_plot', [motion_estimate_dfile], [motion_plot_file], ['1dcat', [motion_estimate_dfile, '[0..5]{0..$}']], stdout= motion_plot_file)
+
 
 
 preprocess = Workflow('preprocess', copy_epis + set_matrix + despike + [motion_base, motion_estmite], derivatives_place = ['mepreprocess'])

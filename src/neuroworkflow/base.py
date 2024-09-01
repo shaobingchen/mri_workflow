@@ -13,7 +13,7 @@ class RunMetaData(object):
     '''
     RunMetaData is a class to store the metadata of a run
     '''
-    def __init__(self, rootdir, subject, session = None, logger = None, overwright = None, preview = False):
+    def __init__(self, rootdir, subject, session = None, logger = None, overwright = False, skip_exist = False, preview = False):
         
         if not op.exists(rootdir):
             raise ValueError(f"rootdir {rootdir} in RunMetaData does not exist")
@@ -26,6 +26,8 @@ class RunMetaData(object):
         self.logger = logger
         self.overwright = overwright
         self.preview = preview
+        self.skip_exist = skip_exist
+        self._skip = False #do not use this explicitly
         
         _logger = logging.getLogger(logger)
         _logger.info(f"create RunMetaData with\n rootdir {rootdir}\n subject {subject}\n session {session}\n logger {logger}\n overwright {overwright}\n preview {preview}")
@@ -47,7 +49,7 @@ class RunMetaData(object):
         else:
             return op.join(f'sub-{self.subject}', f'ses{self.session}')
 class Component(object):
-    def __init__(self, desc = None, suffix = None, datatype = None, run_metadata = None, use_extension = False, extension = None, task = None, space = None, echo = None, type = 'run_full_path'):
+    def __init__(self, desc = None, suffix = None, datatype = None, run_metadata = None, use_extension = False, extension = None, task = None, space = None, echo = None, name_type = 'run_full_path'):
         
         self.desc = desc
         self.datatype = datatype
@@ -58,7 +60,7 @@ class Component(object):
         self.task = task
         self.space = space
         self.echo = echo        
-        self.type = type        
+        self.name_type = name_type        
             
     @classmethod
     def init_from(cls, component, **kwargs):
@@ -104,17 +106,20 @@ class Component(object):
     def run_full_path(self, extension = False):
         return op.join(self.run_dir, self.run_bids_name(extension))
     
-    def use_name(self, extension = False):
+    def use_name(self, extension = False, name_type = None):
         '''
         the name really give to action
         '''
-        match self.type:
+        if name_type is None:
+            name_type = self.name_type
+
+        match name_type:
             case 'run_full_path':
                 return self.run_full_path(extension)
             case 'run_bids_name':
                 return self.run_bids_name(extension)           
             case _:
-                raise ValueError(f"unknown type {self.type} from {self.bids_name}")
+                raise ValueError(f"unknown type {self.name_type} from {self.bids_name}")
             
     bids_order = {
         'bold': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'dir', 'run', 'echo', 'part', 'chunk', 'space', 'desc'],
@@ -256,6 +261,9 @@ class Work(object):
                 if run_metadata.overwright:            
                     component.remove_file()
                     logger.warning(f"remove pre-exist file {component.run_full_path(extension = True)} because overwrite has been setted")
+                elif run_metadata.skip_exist:
+                    logger.warning(f"skip running {self.name} because file {component.run_full_path(extension = True)} pre-exist")
+                    this_run_metadata._skip = True
                     
         for component in self.input_components:
             if not op.exists(component.run_full_path(extension = True)):
@@ -273,7 +281,10 @@ class Work(object):
         this_run_metadata = self._pre_run(run_metadata)
         
         logger = logging.getLogger(run_metadata.logger)
-            
+        
+        if this_run_metadata._skip:
+            logger.warning(f"_skip flag is {this_run_metadata._skip}, skip running {self.name}")
+            return
             
         if run_metadata.preview:
                             
@@ -285,20 +296,73 @@ class Work(object):
         elif self.action.__name__  == '_run_shell_command':
             
             def _process_item(self, item):
-                
                 if isinstance(item, Component):
                     if item in self.input_components:
                         return item.use_name(extension=True)
                     elif item in self.output_components:
                         return item.use_name()
+                    else:
+                        raise ValueError(f"component {item.bids_name()} of {self.name} is not in either input_components or output_components")
                 elif isinstance(item, str):                    
                     return item
+                
+                elif isinstance(item, list):
+                    component_dir = None
+                    component_name_type = None
+                    
+                    def _join_name(item):
+                        '''
+                        join a name of a list of components and strings
+                        used for deal with commands arguments which is composed with both component's name and string 
+                        like 
+                        1dcat './echo_1_vrA.1D[1..6]{0..$}'
+                        the './echo_1_vrA.1D[1..6]{0..$}' part is composed with both component's name and string
+                        now only support one component
+                        '''
+                        if isinstance(item, Component):
+                            nonlocal component_dir 
+                            nonlocal component_name_type
+                            if component_dir is None:
+                                component_dir = item.run_dir
+                                component_name_type = item.name_type
+                                
+                            else:
+                                raise ValueError(f"""component_dir {component_dir} is not None, but {item.run_dir} are given.
+                                                 multiple components are given in a _join_name when running 
+                                                 {self.name} 
+                                                 list is {self.command_list}""")
+                                
+                            if item in self.input_components:
+                                return item.use_name(extension=True)
+                            elif item in self.output_components:
+                                return item.use_name()
+                            else:
+                                raise ValueError(f"component {item.bids_name()} of {self.name} is not in either input_components or output_components")                            
+                            
+                        elif isinstance(item, str):
+                            return item
+                        
+                        else:
+                            raise ValueError(f"item {item} of {self.name} is not a Component or a string")
+                    _joined_name = ''.join([_join_name(subitem) for subitem in item])                       
+                    
+                    if component_name_type == 'run_full_path':
+                        return op.join(component_dir, _joined_name)
+                    elif component_name_type == 'run_bids_name':
+                        return _joined_name
+                    else:
+                        raise ValueError(f"""unexpexted name_type {component_name_type} of {self.name} are given
+                                         this may because no or wrong component are given in a _join_name in command list when running
+                                        {self.name} with command list 
+                                        {self.command_list}
+                                         """)
+                    
                 else:
                     raise ValueError(f"item {item} of {self.name} is not a Component or a string")
             
             _run_command_list = [_process_item(self, item) for item in self.command_list]
             
-            logger.info(f"start running action {self.action.__name__} {[_run_command_list]} of work {self.name} with command list")
+            logger.info(f"start running action {self.action.__name__} {_run_command_list} of work {self.name} with command list")
             
             self.action(_run_command_list, this_run_metadata)
             # try:
@@ -359,14 +423,15 @@ class CommandWork(Work):
     class to wrap command line as a work
     '''
     
-    def __init__(self, name, input_components=None, output_components=None, command_list = None, derivatives_place=None):
+    def __init__(self, name, input_components=None, output_components=None, command_list = None, derivatives_place=None, stdout = None, stdout_to_log = True):
         
         super().__init__(name, input_components, output_components, self._run_shell_command, derivatives_place)
         if command_list is None:
             self.command_list = []
         else:
             self.command_list = command_list
-        
+        self.stdout = stdout
+        self.stdout_to_log = stdout_to_log
         
     def _run_shell_command(self, command_list: list, run_metadata: RunMetaData):
     
@@ -386,8 +451,13 @@ class CommandWork(Work):
             # Wait for the process to complete and capture output
             stdout, stderr = process.communicate()
             
-            for line in stdout.splitlines():
-                logger.debug(line)
+            if self.stdout is not None:
+                with open(self.stdout.use_name(extension = True), 'w') as f:
+                    f.write(stdout)
+            
+            if self.stdout_to_log:
+                for line in stdout.splitlines():
+                    logger.debug(line)
                 
             for line in stderr.splitlines():
                 logger.debug(line) #tools like afni use stderr print normal information
@@ -415,8 +485,8 @@ class CommandWork(Work):
             # Handle all other exceptions
             raise Exception(f"unexpected error executing command: {command}: {e}")
         
-        finally:
-            logger.info(f"finish running command {command} inside _run_shell_command")
+        
+        logger.info(f"finish running command {command} inside _run_shell_command")
         
         
         # process = subprocess.Popen(
