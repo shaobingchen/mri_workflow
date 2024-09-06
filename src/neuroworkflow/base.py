@@ -32,6 +32,7 @@ class RunMetaData(object):
         self._skip = False #do not use this explicitly
         self._work_heap = []
         self.name_type = name_type
+        self._component_format = None #do not use this explicitly, will change when commponent using as different works' input
         
         _logger = logging.getLogger(logger)
         _logger.info(f"create RunMetaData with\n rootdir {rootdir}\n subject {subject}\n session {session}\n logger {logger}\n overwright {overwright}\n preview {preview}")
@@ -229,7 +230,7 @@ class Work(object):
     Work is container to wrap actions for a work flow
     input and out put should be a list of components
     '''
-    def __init__(self, name, input_components = None, output_components = None, action = None, derivatives_place = None):
+    def __init__(self, name, input_components = None, output_components = None, action = None, derivatives_place = None, ):
         
         self.name = name
                       
@@ -335,55 +336,6 @@ class Work(object):
                     return item
                 
                 elif isinstance(item, list):
-                    # component_dir = None
-                    # component_name_type = None
-                    
-                    # def _join_name(item):
-                    #     '''
-                    #     join a name of a list of components and strings
-                    #     used for deal with commands arguments which is composed with both component's name and string 
-                    #     like 
-                    #     1dcat './echo_1_vrA.1D[1..6]{0..$}'
-                    #     the './echo_1_vrA.1D[1..6]{0..$}' part is composed with both component's name and string
-                    #     now only support one component
-                    #     '''
-                    #     if isinstance(item, Component):
-                    #         nonlocal component_dir 
-                    #         nonlocal component_name_type
-                    #         if component_dir is None:
-                    #             component_dir = item.run_dir
-                    #             component_name_type = item.name_type
-                                
-                    #         else:
-                    #             raise ValueError(f"""component_dir {component_dir} is not None, but {item.run_dir} are given.
-                    #                              multiple components are given in a _join_name when running 
-                    #                              {self.name} 
-                    #                              list is {self.command_list}""")
-                                
-                    #         if item in self.input_components:
-                    #             return item.name_for_run(extension=True)
-                    #         elif item in self.output_components:
-                    #             return item.name_for_run()
-                    #         else:
-                    #             raise ValueError(f"component {item.simplified_bids_name()} of {self.name} is not in either input_components or output_components")                            
-                            
-                    #     elif isinstance(item, str):
-                    #         return item
-                        
-                    #     else:
-                    #         raise ValueError(f"item {item} of {self.name} is not a Component or a string")
-                    # _joined_name = ''.join([_join_name(subitem) for subitem in item])                       
-                    
-                    # if component_name_type == 'run_full_path':
-                    #     return op.join(component_dir, _joined_name)
-                    # elif component_name_type == 'run_bids_name':
-                    #     return _joined_name
-                    # else:
-                    #     raise ValueError(f"""unexpexted name_type {component_name_type} of {self.name} are given
-                    #                      this may because no or wrong component are given in a _join_name in command list when running
-                    #                     {self.name} with command list 
-                    #                     {self.command_list}
-                    #                      """)
                     
                     component_position_list = [index for index, item in enumerate(item) if isinstance(item, Component)]
                     len_component_list = len(component_position_list) - 1
@@ -480,9 +432,9 @@ class CommandWork(Work):
     class to wrap command line as a work
     '''
     
-    def __init__(self, name, input_components=None, output_components=None, command_list = None, derivatives_place=None, save_stdout_to = None, stdout_to_log = True):
+    def __init__(self, name, input_components=None, output_components=None, command_list = None, save_stdout_to = None, stdout_to_log = True, **kwargs):
         
-        super().__init__(name, input_components, output_components, self._run_shell_command, derivatives_place)
+        super().__init__(name, input_components, output_components, self._run_shell_command, **kwargs)
         if command_list is None:
             self.command_list = []
         else:
