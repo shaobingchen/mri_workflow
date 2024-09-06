@@ -16,7 +16,7 @@ class RunMetaData(object):
     '''
     RunMetaData is a class to store the metadata of a run
     '''
-    def __init__(self, rootdir, subject, session = None, logger = None, overwright = False, skip_exist = False, preview = False):
+    def __init__(self, rootdir, subject, session = None, logger = None, overwright = False, skip_exist = False, preview = False, name_type = 'run_bids_name'):
         
         if not op.exists(rootdir):
             raise ValueError(f"rootdir {rootdir} in RunMetaData does not exist")
@@ -25,12 +25,13 @@ class RunMetaData(object):
         self.subject = subject
         self.session = session
         self._current_derivatives_place = []
-        self._recursive_deepth = 0
         self.logger = logger
         self.overwright = overwright
         self.preview = preview
         self.skip_exist = skip_exist
         self._skip = False #do not use this explicitly
+        self._work_heap = []
+        self.name_type = name_type
         
         _logger = logging.getLogger(logger)
         _logger.info(f"create RunMetaData with\n rootdir {rootdir}\n subject {subject}\n session {session}\n logger {logger}\n overwright {overwright}\n preview {preview}")
@@ -52,7 +53,7 @@ class RunMetaData(object):
         else:
             return op.join(f'sub-{self.subject}', f'ses{self.session}')
 class Component(object):
-    def __init__(self, desc = None, suffix = None, datatype = None, run_metadata = None, use_extension = False, extension = None, task = None, space = None, echo = None, name_type = 'run_full_path'):
+    def __init__(self, desc = None, suffix = None, datatype = None, run_metadata = None, use_extension = False, extension = None, task = None, space = None, echo = None):
         
         self.desc = desc
         self.datatype = datatype
@@ -62,8 +63,7 @@ class Component(object):
         self.use_extension = use_extension
         self.task = task
         self.space = space
-        self.echo = echo        
-        self.name_type = name_type        
+        self.echo = echo               
             
     @classmethod
     def init_from(cls, component, **kwargs):
@@ -105,25 +105,51 @@ class Component(object):
             raise ValueError("run_metadata is not defined")
         else:
             return op.join(self.run_metadata.rootdir, *self.run_metadata._current_derivatives_place, self.run_metadata.session_place, self.datatype)
-         
-    def run_full_path(self, extension = False):
-        return op.join(self.run_dir, self.run_bids_name(extension))
     
-    def use_name(self, extension = False, name_type = None):
+    @property
+    def run_full_path(self):
+        
+        return self.name_for_run(self)
+    
+    
+    def name_for_run(self, full_path:bool = True, extension:bool = True, name_type:str = None, name_prefix:str = None, name_surfix:str = None,  final_prefix:str = None, final_surfix:str = None):
         '''
-        the name really give to action
+        get 
         '''
         if name_type is None:
-            name_type = self.name_type
-
+            name_type = self.run_metadata.name_type
+            
+        _temp_name = None
+        
         match name_type:
-            case 'run_full_path':
-                return self.run_full_path(extension)
+            
             case 'run_bids_name':
-                return self.run_bids_name(extension)           
+                _temp_name = self.run_bids_name(extension)
+            case 'simplified_bids_name':
+                _temp_name = self.simplified_bids_name(extension)         
             case _:
                 raise ValueError(f"unknown type {self.name_type} from {self.bids_name}")
+        
+        
+        if name_prefix is not None:
+            _temp_name = f"{name_prefix}{_temp_name}"
+        
+        if name_surfix is not None:
+            _temp_name = f"{_temp_name}{name_surfix}"
+        
+        if full_path:
+            _temp_name = op.join(self.run_dir, _temp_name)
+
+        if final_prefix is not None:
+            _temp_name = f"{final_prefix}{_temp_name}"
+        
+        if final_surfix is not None:
+            _temp_name = f"{_temp_name}{final_surfix}"
+        
+        return _temp_name
             
+        
+    
     bids_order = {
         'bold': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'dir', 'run', 'echo', 'part', 'chunk', 'space', 'desc'],
         'MP2RAGE': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'run', 'echo', 'flip', 'inv', 'part', 'chunk', 'space', 'desc'],
@@ -143,7 +169,7 @@ class Component(object):
             
         if __extension:
             if extension is None:
-                raise ValueError(f"extension of {self.bids_name} is not defined, but needed")
+                raise ValueError(f"extension of {self.simplified_bids_name} is not defined, but needed")
             return f'{"_".join([f"{key}-{value}" for key, value in ordered_dic.items() if value is not None])}_{dic['suffix']}.{dic["extension"]}'
         else:
             return f'{"_".join([f"{key}-{value}" for key, value in ordered_dic.items() if value is not None])}_{dic['suffix']}'
@@ -166,7 +192,7 @@ class Component(object):
                                
         return self._bids_name_generator(dic, extension)   
             
-    def bids_name(self, extension = False):
+    def simplified_bids_name(self, extension = False):
         '''
         generage file identity (run_bids_name without metadata)
         '''
@@ -185,7 +211,7 @@ class Component(object):
         '''
         make a test file for preview
         '''
-        with open(self.run_full_path(extension = True), 'w') as f:
+        with open(self.run_full_path, 'w') as f:
             f.write('test')            
             
     
@@ -193,8 +219,7 @@ class Component(object):
         '''
         delete file
         '''
-        if op.exists(self.run_full_path(extension = True)):
-            os.remove(self.run_full_path(extension = True))
+        os.remove(self.run_full_path)
 
 class Initial_component(Component):
     pass
@@ -217,9 +242,9 @@ class Work(object):
             
         self.action = action
         
+        
         if derivatives_place is None:
-            self.derivatives_place = []
-            
+            self.derivatives_place = []            
         else:
             if not isinstance(derivatives_place, list):
                 raise ValueError(f"derivatives_place of {self.name} should be a list")
@@ -244,11 +269,11 @@ class Work(object):
     def _pre_run(self, run_metadata):
         
         this_run_metadata = dc(run_metadata)
-        this_run_metadata._recursive_deepth += 1
+        this_run_metadata._work_heap.append(self.name)
         this_run_metadata._current_derivatives_place = this_run_metadata._current_derivatives_place + self.derivatives_place
         
         logger = logging.getLogger(run_metadata.logger)
-        logger.info(f"run {self.name}, recursive deepth is {this_run_metadata._recursive_deepth}")
+        logger.info(f"run {self.name}, work_heap is {this_run_metadata._work_heap}")
         
                 
         for component in self.output_components:
@@ -259,21 +284,21 @@ class Work(object):
                 logger.warning(f"create directory {component.run_dir}")
                 
         for component in self.output_components:
-            if op.exists(component.run_full_path(extension = True)):
-                logger.warning(f"file {component.run_full_path(extension = True)} exist before running.")
+            if op.exists(component.run_full_path):
+                logger.warning(f"file {component.run_full_path} exist before running.")
                 if run_metadata.overwright:            
                     component.remove_file()
-                    logger.warning(f"remove pre-exist file {component.run_full_path(extension = True)} because overwrite has been setted")
+                    logger.warning(f"remove pre-exist file {component.run_full_path} because overwrite has been setted")
                 elif run_metadata.skip_exist:
-                    logger.warning(f"skip running {self.name} because file {component.run_full_path(extension = True)} pre-exist")
+                    logger.warning(f"skip running {self.name} because file {component.run_full_path} pre-exist")
                     this_run_metadata._skip = True
                     
         for component in self.input_components:
-            if not op.exists(component.run_full_path(extension = True)):
-                raise ValueError(f"input component {component.run_full_path(extension = True)} of work {self.name} does not exist")       
+            if not op.exists(component.run_full_path):
+                raise ValueError(f"input component {component.run_full_path} of work {self.name} does not exist")       
         
         if self.action is None:            
-            raise ValueError(f"action of {self.bids_name} is not defined")               
+            raise ValueError(f"action of {self.simplified_bids_name} is not defined")               
         
         return this_run_metadata
             
@@ -294,74 +319,103 @@ class Work(object):
             for component in self.output_components:
                 
                 component.make_test_file()
-                logger.info(f"make test file {component.run_full_path(extension = True)}")
+                logger.info(f"make test file {component.run_full_path}")
 
         elif self.action.__name__  == '_run_shell_command':
             
             def _process_item(self, item):
                 if isinstance(item, Component):
                     if item in self.input_components:
-                        return item.use_name(extension=True)
+                        return item.name_for_run()
                     elif item in self.output_components:
-                        return item.use_name()
+                        return item.name_for_run()
                     else:
-                        raise ValueError(f"component {item.bids_name()} of {self.name} is not in either input_components or output_components")
+                        raise ValueError(f"component {item.simplified_bids_name()} of {self.name} is not in either input_components or output_components")
                 elif isinstance(item, str):                    
                     return item
                 
                 elif isinstance(item, list):
-                    component_dir = None
-                    component_name_type = None
+                    # component_dir = None
+                    # component_name_type = None
                     
-                    def _join_name(item):
-                        '''
-                        join a name of a list of components and strings
-                        used for deal with commands arguments which is composed with both component's name and string 
-                        like 
-                        1dcat './echo_1_vrA.1D[1..6]{0..$}'
-                        the './echo_1_vrA.1D[1..6]{0..$}' part is composed with both component's name and string
-                        now only support one component
-                        '''
-                        if isinstance(item, Component):
-                            nonlocal component_dir 
-                            nonlocal component_name_type
-                            if component_dir is None:
-                                component_dir = item.run_dir
-                                component_name_type = item.name_type
+                    # def _join_name(item):
+                    #     '''
+                    #     join a name of a list of components and strings
+                    #     used for deal with commands arguments which is composed with both component's name and string 
+                    #     like 
+                    #     1dcat './echo_1_vrA.1D[1..6]{0..$}'
+                    #     the './echo_1_vrA.1D[1..6]{0..$}' part is composed with both component's name and string
+                    #     now only support one component
+                    #     '''
+                    #     if isinstance(item, Component):
+                    #         nonlocal component_dir 
+                    #         nonlocal component_name_type
+                    #         if component_dir is None:
+                    #             component_dir = item.run_dir
+                    #             component_name_type = item.name_type
                                 
-                            else:
-                                raise ValueError(f"""component_dir {component_dir} is not None, but {item.run_dir} are given.
-                                                 multiple components are given in a _join_name when running 
-                                                 {self.name} 
-                                                 list is {self.command_list}""")
+                    #         else:
+                    #             raise ValueError(f"""component_dir {component_dir} is not None, but {item.run_dir} are given.
+                    #                              multiple components are given in a _join_name when running 
+                    #                              {self.name} 
+                    #                              list is {self.command_list}""")
                                 
-                            if item in self.input_components:
-                                return item.use_name(extension=True)
-                            elif item in self.output_components:
-                                return item.use_name()
-                            else:
-                                raise ValueError(f"component {item.bids_name()} of {self.name} is not in either input_components or output_components")                            
+                    #         if item in self.input_components:
+                    #             return item.name_for_run(extension=True)
+                    #         elif item in self.output_components:
+                    #             return item.name_for_run()
+                    #         else:
+                    #             raise ValueError(f"component {item.simplified_bids_name()} of {self.name} is not in either input_components or output_components")                            
                             
-                        elif isinstance(item, str):
-                            return item
+                    #     elif isinstance(item, str):
+                    #         return item
                         
-                        else:
-                            raise ValueError(f"item {item} of {self.name} is not a Component or a string")
-                    _joined_name = ''.join([_join_name(subitem) for subitem in item])                       
+                    #     else:
+                    #         raise ValueError(f"item {item} of {self.name} is not a Component or a string")
+                    # _joined_name = ''.join([_join_name(subitem) for subitem in item])                       
                     
-                    if component_name_type == 'run_full_path':
-                        return op.join(component_dir, _joined_name)
-                    elif component_name_type == 'run_bids_name':
-                        return _joined_name
-                    else:
-                        raise ValueError(f"""unexpexted name_type {component_name_type} of {self.name} are given
-                                         this may because no or wrong component are given in a _join_name in command list when running
-                                        {self.name} with command list 
-                                        {self.command_list}
-                                         """)
+                    # if component_name_type == 'run_full_path':
+                    #     return op.join(component_dir, _joined_name)
+                    # elif component_name_type == 'run_bids_name':
+                    #     return _joined_name
+                    # else:
+                    #     raise ValueError(f"""unexpexted name_type {component_name_type} of {self.name} are given
+                    #                      this may because no or wrong component are given in a _join_name in command list when running
+                    #                     {self.name} with command list 
+                    #                     {self.command_list}
+                    #                      """)
+                    
+                    component_position_list = [index for index, item in enumerate(item) if isinstance(item, Component)]
+                    len_component_list = len(component_position_list) - 1
+                    
+                    if len(component_position_list) == 0:
+                        self.this_run_metadata.logger.error(f"no component is given in a list of command arguments when running {self.name} with command list {self.command_list}")
+                    if len(component_position_list) > 1:
+                        self.this_run_metadata.logger.error(f"multiple components are given in a list of command arguments when running {self.name} with command list {self.command_list}")
+                        raise ValueError(f"multiple components are given in a list of command arguments when running {self.name} with command list {self.command_list}")
+                    component_position = component_position_list[0]
+                    
+                    name_prefix, name_surfix, final_prefix, final_surfix = None, None, None, None
+                                            
+                    if component_position == 1:
+                        final_prefix = item[0]
+                    elif component_position == 2:
+                        final_prefix, name_prefix = item[0], item[1]
+                    
+                    if len_component_list - component_position == 1:
+                        final_surfix = item[-1]
+                    elif len_component_list - component_position == 2:
+                        name_surfix, final_surfix = item[-2], item[-1]
+                        
+                    return item[component_position].name_for_run(name_prefix = name_prefix, name_surfix = name_surfix, final_prefix = final_prefix, final_surfix = final_surfix)
+                        
+                    
+                    
                     
                 else:
                     raise ValueError(f"item {item} of {self.name} is not a Component or a string")
+            
+            
             
             _run_command_list = [_process_item(self, item) for item in self.command_list]
             
@@ -380,8 +434,8 @@ class Work(object):
                               
         elif 'run_metadata' in inspect.signature(self.action).parameters:
             
-            _run_input_components = [component.use_name(extension = True) for component in self.input_components]
-            _run_output_components = [component.use_name() for component in self.output_components]
+            _run_input_components = [component.name_for_run(extension = True) for component in self.input_components]
+            _run_output_components = [component.name_for_run() for component in self.output_components]
             
             logger.info(f"start running action {self.action.__name__} {_run_input_components, _run_output_components} of work {self.name} with run metadata")
             
@@ -399,8 +453,8 @@ class Work(object):
                                 
         else:
             
-            _run_input_components = [component.use_name(extension = True) for component in self.input_components]
-            _run_output_components = [component.use_name() for component in self.output_components]
+            _run_input_components = [component.name_for_run(extension = True) for component in self.input_components]
+            _run_output_components = [component.name_for_run() for component in self.output_components]
             
             logger.info(f"start running action {self.action.__name__} {_run_input_components, _run_output_components} of work {self.name}")
             
@@ -426,14 +480,14 @@ class CommandWork(Work):
     class to wrap command line as a work
     '''
     
-    def __init__(self, name, input_components=None, output_components=None, command_list = None, derivatives_place=None, stdout = None, stdout_to_log = True):
+    def __init__(self, name, input_components=None, output_components=None, command_list = None, derivatives_place=None, save_stdout_to = None, stdout_to_log = True):
         
         super().__init__(name, input_components, output_components, self._run_shell_command, derivatives_place)
         if command_list is None:
             self.command_list = []
         else:
             self.command_list = command_list
-        self.stdout = stdout
+        self.save_stdout_to = save_stdout_to
         self.stdout_to_log = stdout_to_log
         
     def _run_shell_command(self, command_list: list, run_metadata: RunMetaData):
@@ -454,8 +508,8 @@ class CommandWork(Work):
             # Wait for the process to complete and capture output
             stdout, stderr = process.communicate()
             
-            if self.stdout is not None:
-                with open(self.stdout.use_name(extension = True), 'w') as f:
+            if self.save_stdout_to is not None:
+                with open(self.save_stdout_to.run_full_path, 'w') as f:
                     f.write(stdout)
             
             if self.stdout_to_log:
@@ -608,10 +662,10 @@ class Workflow(Work):
     def run(self, run_metadata):
         
         this_run_metadata = dc(run_metadata)
-        this_run_metadata._recursive_deepth += 1
+        this_run_metadata._work_heap.append(self.name)
         this_run_metadata._current_derivatives_place = this_run_metadata._current_derivatives_place + self.derivatives_place
         logger = logging.getLogger(run_metadata.logger)
-        logger.info(f"run {self.name}, recursive deepth is {this_run_metadata._recursive_deepth}")
+        logger.info(f"run {self.name}, work_heap is {this_run_metadata._work_heap}")
         logger.info(f"work_list is {[work.name for work in self.work_list]}")
         
         for work in self.work_list:
