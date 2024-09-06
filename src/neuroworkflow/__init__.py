@@ -1,3 +1,3 @@
 from .base import *
 
-__all__ = ['Component', 'Work', 'Workflow', 'RunMetaData']
+__all__ = ['Component', 'Work', 'Workflow', 'RunMetaData', 'CommandWork']

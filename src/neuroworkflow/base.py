@@ -1,3 +1,6 @@
+'''
+carefully use skip_exist when your workflow contain works directly act on the input_components, this may cause rerun of the have processed components 
+'''
 import os 
 import os.path as op
 import networkx as nx

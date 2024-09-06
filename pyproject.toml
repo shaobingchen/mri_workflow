@@ -1,10 +1,13 @@
 [build-system]
-requires = ["hatchling"]
+requires = [
+    "hatchling",
+    "networkx",
+]
 build-backend = "hatchling.build"
 
 [project]
 name = "neuroworkflow"
-version = "0.0.1beta"
+version = "0.0.3beta"
 authors = [
     {name="shaobingchen", email="shaobingchen0012@gmail.com"},
 ]
