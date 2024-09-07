@@ -16,7 +16,7 @@ class RunMetaData(object):
     '''
     RunMetaData is a class to store the metadata of a run
     '''
-    def __init__(self, rootdir, subject, session = None, logger = None, overwright = False, skip_exist = False, preview = False, name_type = 'run_bids_name'):
+    def __init__(self, rootdir, subject, session = None, logger = None, overwright = False, skip_exist = False, preview = False, name_type = 'run_bids_name' ):
         
         if not op.exists(rootdir):
             raise ValueError(f"rootdir {rootdir} in RunMetaData does not exist")
@@ -33,7 +33,8 @@ class RunMetaData(object):
         self._skip = False #do not use this explicitly
         self._work_heap = []
         self.name_type = name_type
-        self._component_format = None #do not use this explicitly, will change when commponent using as different works' input
+        self._current_format = None #do not use this explicitly, will change when commponent using as different works' input
+        self.intial = True
         
         _logger = logging.getLogger(logger)
         _logger.info(f"create RunMetaData with\n rootdir {rootdir}\n subject {subject}\n session {session}\n logger {logger}\n overwright {overwright}\n preview {preview}")
@@ -231,14 +232,13 @@ class Work(object):
     Work is container to wrap actions for a work flow
     input and out put should be a list of components
     '''
-    def __init__(self, name, input_components = None, output_components = None, action = None, derivatives_place = None, data_place = None):
+    def __init__(self, name, input_components = None, output_components = None, action = None, derivatives_place = None, data_place = None, input_format:list[dict] = None, output_format:list[dict] = None):
         
         self.name = name
                       
         if self._test_component_list(input_components):
             self.input_components = input_components
-            
-        
+                    
         if self._test_component_list(output_components):
             self.output_components = output_components
             
@@ -260,6 +260,9 @@ class Work(object):
                 raise ValueError(f"derivatives_place of {self.name} should be a list")
             else:
                 self.derivatives_place = derivatives_place
+        
+        self.input_format = input_format
+        self.output_format = output_format
     
                 
     def _test_component_list(self, list_or_set):
@@ -270,25 +273,28 @@ class Work(object):
         
         return True 
     
-        
-        
+                
     @property    
     def all_components(self) -> set:
         return set(self.input_components + self.output_components)
     
     def _pre_run(self, run_metadata):
         
-        this_run_metadata = dc(run_metadata)
-        this_run_metadata._work_heap.append(self.name)
-        this_run_metadata._current_derivatives_place = this_run_metadata._current_derivatives_place + self.derivatives_place
-        this_run_metadata._current_data_place = this_run_metadata._current_data_place + self.data_place
+        run_metadata._work_heap.append(self.name)
+        run_metadata._current_derivatives_place = run_metadata._current_derivatives_place + self.derivatives_place
+        run_metadata._current_data_place = run_metadata._current_data_place + self.data_place
         
         logger = logging.getLogger(run_metadata.logger)
-        logger.info(f"run {self.name}, work_heap is {this_run_metadata._work_heap}")
+        logger.info(f"run {self.name}, work_heap is {run_metadata._work_heap}")
         
+        for component in self.input_components:
+            
+            if not op.exists(component.run_full_path):
+                raise ValueError(f"input component {component.run_full_path} of work {self.name} does not exist")    
                 
         for component in self.output_components:
-            component.run_metadata = this_run_metadata
+            transform_run_metadata = dc(run_metadata)
+            component.run_metadata = transform_run_metadata
             
             if not op.exists(component.run_dir()):
                 os.makedirs(component.run_dir())
@@ -302,27 +308,23 @@ class Work(object):
                     logger.warning(f"remove pre-exist file {component.run_full_path} because overwrite has been setted")
                 elif run_metadata.skip_exist:
                     logger.warning(f"skip running {self.name} because file {component.run_full_path} pre-exist")
-                    this_run_metadata._skip = True
-                    
-        for component in self.input_components:
-            if not op.exists(component.run_full_path):
-                raise ValueError(f"input component {component.run_full_path} of work {self.name} does not exist")       
+                    run_metadata._skip = True
+                     
         
         if self.action is None:            
             raise ValueError(f"action of {self.simplified_bids_name} is not defined")               
         
-        return this_run_metadata
+        return run_metadata
             
-            
-        
+                    
     def run(self, run_metadata):
         
-        this_run_metadata = self._pre_run(run_metadata)
+        run_metadata = self._pre_run(run_metadata)
         
         logger = logging.getLogger(run_metadata.logger)
         
-        if this_run_metadata._skip:
-            logger.warning(f"_skip flag is {this_run_metadata._skip}, skip running {self.name}")
+        if run_metadata._skip:
+            logger.debug(f"_skip flag is {run_metadata._skip}, skip running {self.name}")
             return
             
         if run_metadata.preview:
@@ -351,9 +353,9 @@ class Work(object):
                     len_component_list = len(component_position_list) - 1
                     
                     if len(component_position_list) == 0:
-                        self.this_run_metadata.logger.error(f"no component is given in a list of command arguments when running {self.name} with command list {self.command_list}")
+                        self.run_metadata.logger.error(f"no component is given in a list of command arguments when running {self.name} with command list {self.command_list}")
                     if len(component_position_list) > 1:
-                        self.this_run_metadata.logger.error(f"multiple components are given in a list of command arguments when running {self.name} with command list {self.command_list}")
+                        self.run_metadata.logger.error(f"multiple components are given in a list of command arguments when running {self.name} with command list {self.command_list}")
                         raise ValueError(f"multiple components are given in a list of command arguments when running {self.name} with command list {self.command_list}")
                     component_position = component_position_list[0]
                     
@@ -383,14 +385,8 @@ class Work(object):
             
             logger.info(f"start running action {self.action.__name__} {_run_command_list} of work {self.name} with command list")
             
-            self.action(_run_command_list, this_run_metadata)
-            # try:
-            #     self.action(_run_command_list, this_run_metadata)
-            # except Exception as e:
-                    
-            #         logging.getLogger(run_metadata.logger).error(f"error when running {self.name} with error {e}")
-                            
-            #         raise RuntimeError(f"error when running {self.name} with error \n {e}")
+            self.action(_run_command_list, run_metadata) #give a dp run_metadata
+
             
             logger.info(f"finish running action {self.action.__name__} of work {self.name}")
                               
@@ -401,9 +397,9 @@ class Work(object):
             
             logger.info(f"start running action {self.action.__name__} {_run_input_components, _run_output_components} of work {self.name} with run metadata")
             
-            self.action(_run_input_components, _run_output_components, this_run_metadata)
+            self.action(_run_input_components, _run_output_components, run_metadata) #give a dp run_metadata
             # try:
-            #     self.action(_run_input_components, _run_output_components, this_run_metadata)
+            #     self.action(_run_input_components, _run_output_components, run_metadata)
             # except Exception as e:
                 
             #     logging.getLogger(run_metadata.logger).error(f"error when running {self.name} with error {e}")
@@ -623,17 +619,23 @@ class Workflow(Work):
         
     def run(self, run_metadata):
         
-        this_run_metadata = dc(run_metadata)
-        this_run_metadata._work_heap.append(self.name)
-        this_run_metadata._current_derivatives_place = this_run_metadata._current_derivatives_place + self.derivatives_place
-        this_run_metadata._current_data_place = this_run_metadata._current_data_place + self.data_place
+        #prevent original run_metadata from being changed
+        if run_metadata.intial:
+            run_metadata.iniiate = False
+            run_metadata = dc(run_metadata)
+            
+        run_metadata._work_heap.append(self.name)
+        run_metadata._current_derivatives_place = run_metadata._current_derivatives_place + self.derivatives_place
+        run_metadata._current_data_place = run_metadata._current_data_place + self.data_place
         logger = logging.getLogger(run_metadata.logger)
-        logger.info(f"run {self.name}, work_heap is {this_run_metadata._work_heap}")
+        logger.info(f"run {self.name}, work_heap is {run_metadata._work_heap}")
         logger.info(f"work_list is {[work.name for work in self.work_list]}")
         
-        for work in self.work_list:
-              
-            work.run(this_run_metadata)  
+        
+        for work in self.work_list:  
+            
+            transfor_run_metadata = dc(run_metadata) 
+            work.run(transfor_run_metadata)  
                 
     
     @property
