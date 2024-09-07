@@ -16,7 +16,7 @@ class RunMetaData(object):
     '''
     RunMetaData is a class to store the metadata of a run
     '''
-    def __init__(self, rootdir, subject, session = None, logger = None, overwright = False, skip_exist = False, preview = False, name_type = 'run_bids_name' ):
+    def __init__(self, rootdir, subject, session = None, logger = None, overwrite = False, skip_exist = False, preview = False, name_type = 'run_bids_name' ):
         
         if not op.exists(rootdir):
             raise ValueError(f"rootdir {rootdir} in RunMetaData does not exist")
@@ -27,7 +27,7 @@ class RunMetaData(object):
         self._current_derivatives_place = []
         self._current_data_place = []
         self.logger = logger
-        self.overwright = overwright
+        self.overwrite = overwrite
         self.preview = preview
         self.skip_exist = skip_exist
         self._skip = False #do not use this explicitly
@@ -37,7 +37,7 @@ class RunMetaData(object):
         self.intial = True
         
         _logger = logging.getLogger(logger)
-        _logger.info(f"create RunMetaData with\n rootdir {rootdir}\n subject {subject}\n session {session}\n logger {logger}\n overwright {overwright}\n preview {preview}")
+        _logger.info(f"create RunMetaData with\n rootdir {rootdir}\n subject {subject}\n session {session}\n logger {logger}\n overwrite {overwrite}\n preview {preview}")
                 
     
     @property
@@ -105,19 +105,18 @@ class Component(object):
         return [cls.init_from(component, **kwargs) for component in components] 
     
     
-    def run_dir(self, datatype = True): #TODO 
+    def run_dir(self, datatype = True):
         if self.run_metadata is None:
             raise ValueError("run_metadata is not defined")
         else:
-            return op.join(self.run_metadata.rootdir, *self.run_metadata._current_derivatives_place, self.run_metadata.session_place, self.datatype, *self.run_metadata._current_data_place)
-    
-    @property
-    def run_full_path(self):
-        
-        return self.name_for_run(self)
+            if datatype:
+                return op.join(self.run_metadata.rootdir, *self.run_metadata._current_derivatives_place, self.run_metadata.session_place, self.datatype, *self.run_metadata._current_data_place)
+            else:
+                return op.join(self.run_metadata.rootdir, *self.run_metadata._current_derivatives_place, self.run_metadata.session_place, *self.run_metadata._current_data_place)
     
     
-    def name_for_run(self, full_path:bool = True, extension:bool = True, name_type:str = None, name_prefix:str = None, name_surfix:str = None,  final_prefix:str = None, final_surfix:str = None):
+    
+    def name_for_run(self, full_path:bool = True, extension:bool = True, name_type:str = None, name_prefix:str = None, name_surfix:str = None,  final_prefix:str = None, final_surfix:str = None, datatype = True):
         '''
         get 
         '''
@@ -143,7 +142,7 @@ class Component(object):
             _temp_name = f"{_temp_name}{name_surfix}"
         
         if full_path:
-            _temp_name = op.join(self.run_dir(), _temp_name)
+            _temp_name = op.join(self.run_dir(datatype = datatype), _temp_name)
 
         if final_prefix is not None:
             _temp_name = f"{final_prefix}{_temp_name}"
@@ -171,7 +170,7 @@ class Component(object):
     def _bids_name_generator(self, dic, extension):
         
         
-        ordered_dic = {key: dic[key] for key in Component.bids_order['bold'] if key in dic}
+        ordered_dic = {key: dic[key] for key in Component.bids_order[self.suffix] if key in dic}
         
         #this true/false judgement can be nested
         if extension or self.use_extension:
@@ -224,7 +223,7 @@ class Component(object):
         '''
         make a test file for preview
         '''
-        with open(self.run_full_path, 'w') as f:
+        with open(self.use_name(), 'w') as f:
             f.write('test')            
             
     
@@ -232,7 +231,7 @@ class Component(object):
         '''
         delete file
         '''
-        os.remove(self.run_full_path)
+        os.remove(self.use_name())
 
 
 class Work(object):
@@ -278,6 +277,7 @@ class Work(object):
             raise ValueError(f"{self.name} is not a Workflow,  components container should be a list")        
         elif not isinstance(list_or_set, set) and isinstance(self, Workflow):                
             raise ValueError(f"{self.name} is a Workflow, component container of should be a set")
+
         
         return True 
     
@@ -295,6 +295,9 @@ class Work(object):
         logger = logging.getLogger(run_metadata.logger)
         logger.info(f"run {self.name}, work_heap is {run_metadata._work_heap}")
         
+        if len(self.input_components) == 0:
+            logger.warning(f"list of input_components {self.name} is empty.")
+        
         for index, component in enumerate(self.input_components):
             
             if self.input_format is None:
@@ -305,9 +308,12 @@ class Work(object):
                 logger.debug(f"set input component {component.simplified_bids_name} 's format as {self.input_format[index]}")          
                 component.run_metadata._current_format = self.input_format[index]
                 
-            if not op.exists(component.run_full_path):
-                raise ValueError(f"input component {component.run_full_path} of work {self.name} does not exist")    
-                
+            if not op.exists(component.use_name()):
+                raise ValueError(f"input component {component.use_name()} of work {self.name} does not exist")    
+            
+        if len(self.input_components) == 0:
+            logger.warning(f"list of output_components {self.name} is empty, eventhough this work update component in input_components and don't generate new file, it should be added to output_components")    
+                        
         for component in self.output_components:
             transform_run_metadata = dc(run_metadata)
             component.run_metadata = transform_run_metadata
@@ -323,18 +329,25 @@ class Work(object):
             if not op.exists(component.run_dir()):
                 os.makedirs(component.run_dir())
                 logger.warning(f"create directory {component.run_dir()}")
-                
-        for component in self.output_components:
-            if op.exists(component.run_full_path):
-                logger.warning(f"file {component.run_full_path} exist before running.")
-                if run_metadata.overwright:            
-                    component.remove_file()
-                    logger.warning(f"remove pre-exist file {component.run_full_path} because overwrite has been setted")
-                elif run_metadata.skip_exist:
-                    logger.warning(f"skip running {self.name} because file {component.run_full_path} pre-exist")
-                    run_metadata._skip = True
-                     
         
+        _all_output_component_exist = True        
+        for component in self.output_components:
+            if op.exists(component.use_name()):                
+                logger.warning(f"file {component.use_name()} exist before running.")
+                if component not in self.input_components and run_metadata.overwrite:      
+                    component.remove_file()
+                    logger.warning(f"remove pre-exist file {component.use_name()} because overwrite has been setted")
+            
+            else:
+                _all_output_component_exist = False
+                
+        if  _all_output_component_exist:
+            run_metadata._skip = True
+            logger.warning(f"skip running {self.name} because all output components are exist, if a output is also a exist input, this may skip a undo work")    
+                    
+            
+
+
         if self.action is None:            
             raise ValueError(f"action of {self.simplified_bids_name} is not defined")               
         
@@ -356,7 +369,7 @@ class Work(object):
             for component in self.output_components:
                 
                 component.make_test_file()
-                logger.info(f"make test file {component.run_full_path}")
+                logger.info(f"make test file {component.use_name()}")
 
         elif self.action.__name__  == '_run_shell_command':
             
@@ -489,7 +502,7 @@ class CommandWork(Work):
             stdout, stderr = process.communicate()
             
             if self.save_stdout_to is not None:
-                with open(self.save_stdout_to.run_full_path, 'w') as f:
+                with open(self.save_stdout_to.use_name(), 'w') as f:
                     f.write(stdout)
             
             if self.stdout_to_log:
