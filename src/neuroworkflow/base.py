@@ -11,7 +11,7 @@ import logging
 import shlex
 import subprocess
 
-
+ 
 class RunMetaData(object):
     '''
     RunMetaData is a class to store the metadata of a run
@@ -33,7 +33,7 @@ class RunMetaData(object):
         self._skip = False #do not use this explicitly
         self._work_heap = []
         self.name_type = name_type
-        self._current_format = None #do not use this explicitly, will change when commponent using as different works' input
+        self._current_format = None #do not use this explicitly, will change when commponent using as different work's input
         self.intial = True
         
         _logger = logging.getLogger(logger)
@@ -105,7 +105,7 @@ class Component(object):
         return [cls.init_from(component, **kwargs) for component in components] 
     
     
-    def run_dir(self, datatype = True):
+    def run_dir(self, datatype = True): #TODO 
         if self.run_metadata is None:
             raise ValueError("run_metadata is not defined")
         else:
@@ -152,17 +152,24 @@ class Component(object):
             _temp_name = f"{_temp_name}{final_surfix}"
         
         return _temp_name
-            
-        
     
+
+    def use_name(self,**kwargs):
+        if self.run_metadata._current_format is None:
+            return self.name_for_run(**kwargs)
+        else:
+            return self.name_for_run(**self.run_metadata._current_format)
+
     bids_order = {
         'bold': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'dir', 'run', 'echo', 'part', 'chunk', 'space', 'desc'],
         'MP2RAGE': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'run', 'echo', 'flip', 'inv', 'part', 'chunk', 'space', 'desc'],
         'T1w': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'run', 'echo', 'part', 'chunk', 'space', 'desc'],
         'fmap': ['sub', 'ses', 'acq', 'run', 'gre', 'chunk', 'space', 'desc']
-    } 
+    }            
+
  
     def _bids_name_generator(self, dic, extension):
+        
         
         ordered_dic = {key: dic[key] for key in Component.bids_order['bold'] if key in dic}
         
@@ -196,8 +203,9 @@ class Component(object):
         #     __extension = False
                                
         return self._bids_name_generator(dic, extension)   
-            
-    def simplified_bids_name(self, extension = False):
+    
+    @property        
+    def simplified_bids_name(self):
         '''
         generage file identity (run_bids_name without metadata)
         '''
@@ -209,7 +217,7 @@ class Component(object):
             
         dic = dc(self.__dict__)          
         
-        return self._bids_name_generator(dic, extension)     
+        return self._bids_name_generator(dic, True)     
     
     
     def make_test_file(self):
@@ -287,14 +295,30 @@ class Work(object):
         logger = logging.getLogger(run_metadata.logger)
         logger.info(f"run {self.name}, work_heap is {run_metadata._work_heap}")
         
-        for component in self.input_components:
+        for index, component in enumerate(self.input_components):
             
+            if self.input_format is None:
+                pass
+            elif len(self.input_format) != len(self.input_components):
+                raise ValueError(f"input format {self.input_format} of {self.name} don't match the input components {self.input_components}")     
+            else: 
+                logger.debug(f"set input component {component.simplified_bids_name} 's format as {self.input_format[index]}")          
+                component.run_metadata._current_format = self.input_format[index]
+                
             if not op.exists(component.run_full_path):
                 raise ValueError(f"input component {component.run_full_path} of work {self.name} does not exist")    
                 
         for component in self.output_components:
             transform_run_metadata = dc(run_metadata)
             component.run_metadata = transform_run_metadata
+            
+            if self.output_format is None:
+                pass
+            elif len(self.output_format) != len(self.output_components):
+                raise ValueError(f"output format {self.output_format} of {self.name} don't match the output components {self.output_components}")
+            else:
+                logger.debug(f"set output component {component.simplified_bids_name} 's format as {self.output_format[index]}")
+                component.run_metadata._current_format = self.output_format[index]
             
             if not op.exists(component.run_dir()):
                 os.makedirs(component.run_dir())
@@ -339,11 +363,11 @@ class Work(object):
             def _process_item(self, item):
                 if isinstance(item, Component):
                     if item in self.input_components:
-                        return item.name_for_run()
+                        return item.use_name()
                     elif item in self.output_components:
-                        return item.name_for_run()
+                        return item.use_name()
                     else:
-                        raise ValueError(f"component {item.simplified_bids_name()} of {self.name} is not in either input_components or output_components")
+                        raise ValueError(f"component {item.simplified_bids_name} of {self.name} is not in either input_components or output_components")
                 elif isinstance(item, str):                    
                     return item
                 
@@ -372,9 +396,7 @@ class Work(object):
                         name_surfix, final_surfix = item[-2], item[-1]
                         
                     return item[component_position].name_for_run(name_prefix = name_prefix, name_surfix = name_surfix, final_prefix = final_prefix, final_surfix = final_surfix)
-                        
-                    
-                    
+                                                            
                     
                 else:
                     raise ValueError(f"item {item} of {self.name} is not a Component or a string")
@@ -391,9 +413,9 @@ class Work(object):
             logger.info(f"finish running action {self.action.__name__} of work {self.name}")
                               
         elif 'run_metadata' in inspect.signature(self.action).parameters:
-            
-            _run_input_components = [component.name_for_run(extension = True) for component in self.input_components]
-            _run_output_components = [component.name_for_run() for component in self.output_components]
+
+            _run_input_components = [component.use_name() for component in self.input_components]
+            _run_output_components = [component.use_name() for component in self.output_components]
             
             logger.info(f"start running action {self.action.__name__} {_run_input_components, _run_output_components} of work {self.name} with run metadata")
             
@@ -411,8 +433,8 @@ class Work(object):
                                 
         else:
             
-            _run_input_components = [component.name_for_run(extension = True) for component in self.input_components]
-            _run_output_components = [component.name_for_run() for component in self.output_components]
+            _run_input_components = [component.use_name() for component in self.input_components]
+            _run_output_components = [component.use_name() for component in self.output_components]
             
             logger.info(f"start running action {self.action.__name__} {_run_input_components, _run_output_components} of work {self.name}")
             

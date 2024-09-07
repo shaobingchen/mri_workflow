@@ -115,7 +115,7 @@ motion_estmite = CommandWork(f'motion_estimate',
 
 motion_plot_file = Component.init_from(motion_estimate_dfile, desc = 'plotmotion', extension = '1D')
 
-motion_plot = CommandWork(f'motion_plot', [motion_estimate_dfile], [motion_plot_file], ['1dcat', [motion_estimate_dfile, '[1..6]{0..$}']], save_stdout_to= motion_plot_file, stdout_to_log= False)
+motion_plot = CommandWork(f'motion_plot', [motion_estimate_dfile], [motion_plot_file], ['1dcat', [motion_estimate_dfile, '[1..6]{0..$}']], save_stdout_to= motion_plot_file, stdout_to_log= False, output_format = [{}])
 
 slice_time_list = Component.init_multi_components_from(origin_json_list, desc = 'slicetime', extension = '1D', use_extension = True)
 
