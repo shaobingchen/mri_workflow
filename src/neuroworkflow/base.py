@@ -25,6 +25,7 @@ class RunMetaData(object):
         self.subject = subject
         self.session = session
         self._current_derivatives_place = []
+        self._current_data_place = []
         self.logger = logger
         self.overwright = overwright
         self.preview = preview
@@ -53,8 +54,9 @@ class RunMetaData(object):
             return op.join(f'sub-{self.subject}')
         else:
             return op.join(f'sub-{self.subject}', f'ses{self.session}')
+        
 class Component(object):
-    def __init__(self, desc = None, suffix = None, datatype = None, run_metadata = None, use_extension = False, extension = None, task = None, space = None, echo = None):
+    def __init__(self, desc = None, suffix = None, datatype = None, run_metadata = None, use_extension = False, extension = None, task = None, space = None, echo = None, data_place = None):
         
         self.desc = desc
         self.datatype = datatype
@@ -64,7 +66,8 @@ class Component(object):
         self.use_extension = use_extension
         self.task = task
         self.space = space
-        self.echo = echo               
+        self.echo = echo 
+        self.data_place = data_place               
             
     @classmethod
     def init_from(cls, component, **kwargs):
@@ -100,12 +103,12 @@ class Component(object):
         """
         return [cls.init_from(component, **kwargs) for component in components] 
     
-    @property
-    def run_dir(self):
+    
+    def run_dir(self, datatype = True):
         if self.run_metadata is None:
             raise ValueError("run_metadata is not defined")
         else:
-            return op.join(self.run_metadata.rootdir, *self.run_metadata._current_derivatives_place, self.run_metadata.session_place, self.datatype)
+            return op.join(self.run_metadata.rootdir, *self.run_metadata._current_derivatives_place, self.run_metadata.session_place, self.datatype, *self.run_metadata._current_data_place)
     
     @property
     def run_full_path(self):
@@ -139,7 +142,7 @@ class Component(object):
             _temp_name = f"{_temp_name}{name_surfix}"
         
         if full_path:
-            _temp_name = op.join(self.run_dir, _temp_name)
+            _temp_name = op.join(self.run_dir(), _temp_name)
 
         if final_prefix is not None:
             _temp_name = f"{final_prefix}{_temp_name}"
@@ -222,15 +225,13 @@ class Component(object):
         '''
         os.remove(self.run_full_path)
 
-class Initial_component(Component):
-    pass
 
 class Work(object):
     '''
     Work is container to wrap actions for a work flow
     input and out put should be a list of components
     '''
-    def __init__(self, name, input_components = None, output_components = None, action = None, derivatives_place = None, ):
+    def __init__(self, name, input_components = None, output_components = None, action = None, derivatives_place = None, data_place = None):
         
         self.name = name
                       
@@ -242,6 +243,14 @@ class Work(object):
             self.output_components = output_components
             
         self.action = action
+        
+        if data_place is None:
+            self.data_place = []
+        else:
+            if not isinstance(data_place, list):
+                raise ValueError(f"data_place of {self.name} should be a list")
+            else:
+                self.data_place = data_place
         
         
         if derivatives_place is None:
@@ -272,6 +281,7 @@ class Work(object):
         this_run_metadata = dc(run_metadata)
         this_run_metadata._work_heap.append(self.name)
         this_run_metadata._current_derivatives_place = this_run_metadata._current_derivatives_place + self.derivatives_place
+        this_run_metadata._current_data_place = this_run_metadata._current_data_place + self.data_place
         
         logger = logging.getLogger(run_metadata.logger)
         logger.info(f"run {self.name}, work_heap is {this_run_metadata._work_heap}")
@@ -280,9 +290,9 @@ class Work(object):
         for component in self.output_components:
             component.run_metadata = this_run_metadata
             
-            if not op.exists(component.run_dir):
-                os.makedirs(component.run_dir)
-                logger.warning(f"create directory {component.run_dir}")
+            if not op.exists(component.run_dir()):
+                os.makedirs(component.run_dir())
+                logger.warning(f"create directory {component.run_dir()}")
                 
         for component in self.output_components:
             if op.exists(component.run_full_path):
@@ -523,7 +533,7 @@ class CommandWork(Work):
 
 class Workflow(Work):
     
-    def __init__(self, name, work_list = None, derivatives_place = None, output_component_mannual = None):
+    def __init__(self, name, work_list = None, output_component_mannual = None, **kwargs):
         
         if work_list is None:
             self.worklist = []
@@ -534,7 +544,7 @@ class Workflow(Work):
         input_components = self.get_input_components
         output_components = self.get_output_components
         
-        super().__init__(name, input_components, output_components, derivatives_place = derivatives_place)
+        super().__init__(name, input_components, output_components, **kwargs)
         
         if output_component_mannual is None:
             self.output_components_mannual = set()
@@ -616,6 +626,7 @@ class Workflow(Work):
         this_run_metadata = dc(run_metadata)
         this_run_metadata._work_heap.append(self.name)
         this_run_metadata._current_derivatives_place = this_run_metadata._current_derivatives_place + self.derivatives_place
+        this_run_metadata._current_data_place = this_run_metadata._current_data_place + self.data_place
         logger = logging.getLogger(run_metadata.logger)
         logger.info(f"run {self.name}, work_heap is {this_run_metadata._work_heap}")
         logger.info(f"work_list is {[work.name for work in self.work_list]}")

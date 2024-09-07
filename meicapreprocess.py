@@ -110,7 +110,7 @@ motion_estmite = CommandWork(f'motion_estimate',
                              [base_mask_echo1, despiked_epi_list[0]],
                              [motion_estimate_dfile, motion_estimate_matrix],
                              ['3dvolreg', '-tshift', 'quintic', '-1Dmatrix_save', motion_estimate_matrix, '-dfile', motion_estimate_dfile, '-prefix', motion_estimate_matrix, '-base', base_mask_echo1 ,despiked_epi_list[0]],
-                             derivatives_place = ['motion_estimate']
+                             data_place = ['motion_estimate']
                              ) 
 
 motion_plot_file = Component.init_from(motion_estimate_dfile, desc = 'plotmotion', extension = '1D')
