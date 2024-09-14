@@ -68,7 +68,10 @@ class Component(object):
         self.use_extension = use_extension
         self.task = task
         self.space = space
-        self.echo = echo 
+        if echo is None:
+            self.echo = None
+        else:    
+            self.echo = str(echo)
         self.data_place = data_place               
             
     @classmethod
@@ -240,7 +243,7 @@ class Work(object):
     Work is container to wrap actions for a work flow
     input and out put should be a list of components
     '''
-    def __init__(self, name, input_components = None, output_components = None, action = None, derivatives_place = None, data_place = None, input_format:list[dict] = None, output_format:list[dict] = None):
+    def __init__(self, name, input_components = None, output_components = None, action = None, derivatives_place = None, data_place = None, input_format:list[dict] = None, output_format:list[dict] = None, append_auto_input = True):
         
         self.name = name
                       
@@ -262,6 +265,7 @@ class Work(object):
                     
             
         self.action = action
+        self.append_auto_input = append_auto_input
         
         if data_place is None:
             self.data_place = []
@@ -391,6 +395,7 @@ class Work(object):
             pass
 
         elif self.action.__name__  == '_run_shell_command':
+        
             
             def _process_item(self, item):
                 if isinstance(item, Component):
@@ -400,12 +405,23 @@ class Work(object):
                         return item.use_name()
                     else:
                         raise ValueError(f"component {item.simplified_bids_name} of {self.name} is not in either input_components or output_components")
+                    
+                elif isinstance(item, AutoInput):
+                    
+                    if item.dict:
+                        raise ValueError(f"when running {self.name}, a non-empty AutoInput is given. auto_input need a empty AutoInput in command_list, the match part should put in input_components")
+                    else:
+                        return self.input_components_list[0].use_name()
+                    
                 elif isinstance(item, str):                    
                     return item
                 
                 elif isinstance(item, list):
                     
-                    component_position_list = [index for index, item in enumerate(item) if isinstance(item, Component)]
+                    
+                    component_position_list = [index for index, item in enumerate(item) if isinstance(item, (Component, dict))]# unfinished
+                    
+                    
                     len_component_list = len(component_position_list) - 1
                     
                     if len(component_position_list) == 0:
@@ -414,6 +430,12 @@ class Work(object):
                         self.run_metadata.logger.error(f"multiple components are given in a list of command arguments when running {self.name} with command list {self.command_list}")
                         raise ValueError(f"multiple components are given in a list of command arguments when running {self.name} with command list {self.command_list}")
                     component_position = component_position_list[0]
+                    
+                    if isinstance(item[component_position], AutoInput):
+                        if item[component_position]:
+                            raise ValueError(f"when running {self.name}, a non-empty AutoInput is given in {item}. auto_input need a empty AutoInput in command_list, the match part should put in input_components")
+                        
+                        item[component_position] = self.input_components_list[0]
                     
                     name_prefix, name_surfix, final_prefix, final_surfix = None, None, None, None
                                             
@@ -516,7 +538,7 @@ class CommandWork(Work):
     
         command = shlex.join(command_list)
         logger = logging.getLogger(run_metadata.logger)
-        logger.info(f"start running command {command} inside _run_shell_command")
+        logger.debug(f"start running command {command} inside _run_shell_command")
         
         
         try:
@@ -566,7 +588,7 @@ class CommandWork(Work):
             raise Exception(f"unexpected error executing command: {command}: {e}")
         
         
-        logger.info(f"finish running command {command} inside _run_shell_command")
+        logger.debug(f"finish running command {command} inside _run_shell_command")
         
         
         # process = subprocess.Popen(
@@ -594,14 +616,49 @@ class CommandWork(Work):
 
 class Workflow(Work):
     
-    def __init__(self, name, work_list = None, output_component_mannual = None, **kwargs):
+    def __init__(self, name, work_list = None, output_component_mannual = None, enable_auto_input = False, **kwargs):
         
         if work_list is None:
             self.worklist = []
         else:
             self.work_list = work_list
             
+        self.enable_auto_input = enable_auto_input
+        # do auto input
+        # append first element of output_components_list of work to input_components_list for other work's auto input
+        # if a work's auto_input is True, and its input_components_list is empty, then the only one element of auto_input_set will be append to it
+        # if its input_components_list is not empty, then using its key-value to match a component in auto_input_set    
+        if self.enable_auto_input:
+            
+            self._auto_input_set = set()  
+
+            for work in self.work_list:
+                if not isinstance(work, Workflow):
+                    
+                                        
+                    if isinstance(work.input_components_list[0], AutoInput):                            
+                        if not work.input_components_list[0].dict:
+                            
+                            if len(self._auto_input_set) == 1:
+                                work.input_components_list[0] = self._auto_input_set.pop()
+                            else:
+                                raise ValueError(f"when doing auto_input on work {work.name} , input_components_list is empty, but _auto_input_set {self._auto_input_set} is given, which is expected has length 1")
                         
+                        else:
+                            print()
+                            _matched_list = [component for component in self._auto_input_set if all(getattr(component, key) == value for key, value in work.input_components_list[0].dict.items())]
+                            if len(_matched_list) == 1:
+                                work.input_components_list[0] = _matched_list[0]
+                                self._auto_input_set.remove(_matched_list[0])
+                            elif len(_matched_list) == 0:
+                                raise ValueError(f"when doing auto_input on work {work.name} , first element of input_components is AutoInput, but no matched component in _auto_input_set {[component.simplified_bids_name for component in self._auto_input_set]} with input_components_list {work.input_components_list[0].dict}")
+                            else:
+                                raise ValueError(f"when doing auto_input on work {work.name} , first element of input_components is AutoInput, but multiple matched component in _auto_input_set {[component.simplified_bids_name for component in self._auto_input_set]} with input_components_list {work.input_components_list[0].dict}")
+                    
+                    if work.append_auto_input:
+                        self._auto_input_set.add(work.output_components_list[0])            
+                       
+                                                    
         input_components = self.get_input_components
         output_components = self.get_output_components
         
@@ -610,7 +667,7 @@ class Workflow(Work):
         if output_component_mannual is None:
             self.output_components_mannual = set()
         else:
-            self.output_components_mannual = output_component_mannual
+            self.output_components_mannual = output_component_mannual 
         
         
     def add_work(self, work):
@@ -766,7 +823,10 @@ def return_ancestor_test(graph: nx.DiGraph):
     return _ancestor_test        
 
 
-
+class AutoInput(object):
+    def __init__(self, **kwargs) -> None:
+        
+        self.dict = kwargs
             
             
             
