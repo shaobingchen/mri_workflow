@@ -13,7 +13,7 @@ class RunMetaData(object):
     '''
     RunMetaData is a class to store the metadata of a run
     '''
-    def __init__(self, rootdir, subject, session = None, logger = None, overwrite = False, skip_exist = False, preview = False, name_type = 'run_bids_name' ):
+    def __init__(self, rootdir, subject, session = None, logger = None, overwrite = False, skip_exist = False, preview = False, name_type = 'run_bids_name', broadcast_metadata = False):
         
         if not op.exists(rootdir):
             raise ValueError(f"rootdir {rootdir} in RunMetaData does not exist")
@@ -26,6 +26,7 @@ class RunMetaData(object):
         self.logger = logger
         self.overwrite = overwrite
         self.preview = preview
+        self.broadcast_metadata = broadcast_metadata
         self.skip_exist = skip_exist
         self._skip = False #do not use this explicitly
         self._work_heap = []
@@ -288,11 +289,9 @@ class Work(object):
             raise ValueError(f"{self.name} is not a Workflow,  components container should be a list")        
         elif not isinstance(list_or_set, set) and isinstance(self, Workflow):                
             raise ValueError(f"{self.name} is a Workflow, component container of should be a set")
-
         
         return True 
-    
-                
+                    
     @property    
     def all_components(self) -> set:
         return self.input_components_set | self.output_components_set
@@ -387,6 +386,9 @@ class Work(object):
                 
                 component.make_test_file()
                 logger.info(f"make test file {component.use_name()}")
+                
+        elif run_metadata.broadcast_metadata:
+            pass
 
         elif self.action.__name__  == '_run_shell_command':
             
