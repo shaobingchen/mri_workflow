@@ -243,7 +243,7 @@ class Work(object):
     Work is container to wrap actions for a work flow
     input and out put should be a list of components
     '''
-    def __init__(self, name, input_components = None, output_components = None, action = None, derivatives_place = None, data_place = None, input_format:list[dict] = None, output_format:list[dict] = None, append_auto_input = True):
+    def __init__(self, name, input_components = None, output_components = None, action = None, derivatives_place = None, data_place = None, input_format:list[dict] = None, output_format:list[dict] = None, append_auto_input = True, preserve_auto_input = False):
         
         self.name = name
                       
@@ -266,6 +266,7 @@ class Work(object):
             
         self.action = action
         self.append_auto_input = append_auto_input
+        self.preserve_auto_input = preserve_auto_input
         
         if data_place is None:
             self.data_place = []
@@ -360,7 +361,7 @@ class Work(object):
                 _all_output_component_exist = False
 
                 
-        if  _all_output_component_exist and not self.output_components_set.issubset(self.input_components_set):
+        if  run_metadata.skip_exist and _all_output_component_exist and not self.output_components_set.issubset(self.input_components_set):
             run_metadata._skip = True
             logger.warning(f"skip running {self.name} because all output components are exist, if a output is also a exist input, this may redo a work") 
            
@@ -645,11 +646,12 @@ class Workflow(Work):
                                 raise ValueError(f"when doing auto_input on work {work.name} , input_components_list is empty, but _auto_input_set {self._auto_input_set} is given, which is expected has length 1")
                         
                         else:
-                            print()
                             _matched_list = [component for component in self._auto_input_set if all(getattr(component, key) == value for key, value in work.input_components_list[0].dict.items())]
                             if len(_matched_list) == 1:
                                 work.input_components_list[0] = _matched_list[0]
-                                self._auto_input_set.remove(_matched_list[0])
+                                if not work.preserve_auto_input:                                    
+                                    self._auto_input_set.remove(_matched_list[0])
+                                
                             elif len(_matched_list) == 0:
                                 raise ValueError(f"when doing auto_input on work {work.name} , first element of input_components is AutoInput, but no matched component in _auto_input_set {[component.simplified_bids_name for component in self._auto_input_set]} with input_components_list {work.input_components_list[0].dict}")
                             else:
