@@ -1,3 +1,17 @@
+'''
+base.py is a module to define the basic classes for a workflow, including RunMetaData, Component, Work, CommandWork, Workflow, AutoInput
+
+RunMetaData: store the metadata of a run. RunMeradata will be passed from workflow to work and finally to component. to affect the behavior of the run.
+
+Component: represent the input and output of a work.
+
+Work: container to wrap actions.
+
+Workflow: container to wrap works, and itself is also a work
+CommandWork: a subclass of Work, to wrap command line as a work.(which is very common action using neuroimaging tools)
+
+AutoInput: a class to indicate a auto input, if first element of work.input_components is AutoInput(). when running, it will be replaced by the element in the auto_input_set.
+'''
 import os 
 import os.path as op
 import networkx as nx
@@ -11,9 +25,58 @@ import subprocess
  
 class RunMetaData(object):
     '''
-    RunMetaData is a class to store the metadata of a run
+    RunMetaData is a class to store the metadata of a run. RunMeradata will be passed from workflow to work and finally to component. to affect the behavior of the run.
+    
+    Parameters
+    ----------
+    rootdir : str
+        root directory of the run
+    subject : str
+        subject id for run
+    session : str
+        session id for run
+    logger : logging.Logger
+        logger for the run
+    overwrite : bool
+        delete existing files when running a work
+    skip_exist : bool
+        skip running a work if all its output files exist
+    preview : bool
+        make a test file trees show what the running result looks like, no real calculation is performed, all files's content is 'test'
+    name_type : str
+        naming convention for output files
+        'run_bids_name' : use BIDS naming convention
+        'simplified_bids_name' : use BIDS naming convention without subject and session
+    broadcast_metadata : bool
+        broadcast metadata to all works, this is useful when debug and using juputer notebook to process data 
+    
+
+    Attributes
+    ----------
+            
+    subjectdir -> str  @property
+        join rootdir and sub-{subject}
+        
+    sessiondir -> str  @property
+        join rootdir and sub-{subject} and ses-{session}
+    
+    session_place -> str  @property
+        join sub-{subject} and ses-{session}    
+        
+    _work_heap -> list
+        list of a work and all its ancestor e.g. if a work work1 is in a workflow workflow1, and workflow1 is in a workflow workflow2, then work_heap of work1 is ['workflow2', 'workflow1', 'work1']
+        
+    _current_derivatives_place -> list
+        joined list of derivatives_place of _work_heap e.g. if a work's _work_heap is ['workflow2', 'workflow1', 'work1'], derivatives_place of workflow1 is ['derivatives1'], derivatives_place of workflow2 is ['derivatives2'], then _current_derivatives_place of work1 is ['derivatives2', 'derivatives1'].
+        this is used to indicate the place of a Component in the directory tree before the session_place.
+        
+    _current_data_place -> list
+        joined list of data_place of _work_heap e.g. if a work's _work_heap is ['workflow2', 'workflow1', 'work1'], data_place of workflow1 is ['data1'], data_place of workflow2 is ['data2'], then _current_data_place of work1 is ['data2', 'data1'].
+        this is used to indicate the place of a Component in the directory tree after the session_place.
+        
     '''
-    def __init__(self, rootdir, subject, session = None, logger = None, overwrite = False, skip_exist = False, preview = False, name_type = 'run_bids_name', broadcast_metadata = False):
+    
+    def __init__(self, rootdir: str, subject: str, session: str = None, logger: logging.Logger = None, overwrite: bool = False, skip_exist: bool = False, preview: bool = False, name_type: str = 'run_bids_name', broadcast_metadata: bool = False):
         
         if not op.exists(rootdir):
             raise ValueError(f"rootdir {rootdir} in RunMetaData does not exist")
@@ -39,8 +102,7 @@ class RunMetaData(object):
         
         _logger = logging.getLogger(logger)
         _logger.info(f"create RunMetaData with\n rootdir {rootdir}\n subject {subject}\n session {session}\n logger {logger}\n overwrite {overwrite}\n preview {preview}")
-                
-    
+                    
     @property
     def subjectdir(self):
         return op.join(self.rootdir, f'sub-{self.subject}')
@@ -58,6 +120,64 @@ class RunMetaData(object):
             return op.join(f'sub-{self.subject}', f'ses{self.session}')
         
 class Component(object):
+    '''
+    Component is a class to represent the input and output of a work, it is characterized by part of parameters such as desc, suffix, datatype, run_metadata.
+    
+    when writing a workflow,
+    a component is characterized by part of parameters such as desc, suffix, datatype. it is a object to represent about a work's input or output which is unrelated to thing in RunMetaData(this part will be included when running), like datatype, suffix, desc, etc.  
+      
+    when run a workflow,
+    a component is usually combined with run_metadata to discribe a actually file. and process informations about it such as full path, name, etc.
+    
+    Parameters
+    ----------
+    key-value:
+        desc : str
+            description of the component
+        suffix : str
+            suffix of the component e.g. 'bold', 'T1w', 'fmap'
+            this is the suffix of bids file name
+        datatype : str
+            datatype of the component e.g. 'func', 'anat', 'fmap'
+            this is the folder name of bids file
+        task : str
+            task of the component 
+        space : str
+            space of the component e.g. 'MNI152NLin2009cAsym', 'native'  
+        echo : int
+            echo of the component
+        data_place : list
+          
+                   
+    control
+        run_metadata : RunMetaData
+            metadata of the run, this is usually not directly setted when initial a component, but passed from work.        
+        use_extension : bool
+            whether to use extension when generate file name
+        extension : str
+            extension of the file
+        data_place : list
+            output place of the comoonent in the directory tree. this attribute accept a list of string, each string is a folder's name. this is used to generate the full path of the file when running a work. this will be combined with run_metadata._current_data_place(place at tail). e.g. ['place1','place2'] will be combined with run_metadata._current_data_place = ['place0'] to generate a full path of the file.
+    
+    Attributes
+    ----------
+    run_dir -> str  
+        path of the component when running
+    name_for_run -> str
+        generate file path of the component with RunMetaData. this is the path given to action by default
+    run_bids_name -> str
+        file name of the component when running with BIDS naming convention
+    simplified_bids_name -> str
+        simplified file name of the component when running with BIDS naming convention without subject and session
+    
+    Methods
+    -------
+    make_test_file -> None
+        make a test file whose content is 'test' of the component when running
+    delete_file -> None
+        delete corresponding file of the component when running
+        
+    '''
     def __init__(self, desc = None, suffix = None, datatype = None, run_metadata = None, use_extension = False, extension = None, task = None, space = None, echo = None, data_place = None):
         
         self.desc = desc
@@ -122,7 +242,8 @@ class Component(object):
     
     def name_for_run(self, full_path:bool = True, extension:bool = True, name_type:str = None, name_prefix:str = None, name_surfix:str = None,  final_prefix:str = None, final_surfix:str = None, datatype = True):
         '''
-        get 
+        get file name for run
+        
         '''
         if name_type is None:
             name_type = self.run_metadata.name_type
@@ -161,7 +282,7 @@ class Component(object):
         if self.run_metadata._current_format is None:
             return self.name_for_run(**kwargs)
         else:
-            return self.name_for_run(**self.run_metadata._current_format)
+            return self.name_for_run(**self.run_metadata._current_format, **kwargs)
 
     bids_order = {
         'bold': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'dir', 'run', 'echo', 'part', 'chunk', 'space', 'desc'],
@@ -198,13 +319,7 @@ class Component(object):
         dic = dc(self.__dict__)
         dic.setdefault('sub', self.run_metadata.subject)
         dic.setdefault('ses', self.run_metadata.session)
-        
-        # #this true/false judgement can be nested
-        # if extension or self.use_extension:
-        #     __extension = True
-        # else:
-        #     __extension = False
-                               
+                                       
         return self._bids_name_generator(dic, extension)   
     
     @property        
@@ -241,27 +356,34 @@ class Component(object):
 class Work(object):
     '''
     Work is container to wrap actions for a work flow
-    input and out put should be a list of components
+    
+    Parameters
+    ----------
+    name : str
+        name of the work
+    input_components : list[Component]
+        list of input components
+    output_components : list
+        list of output components
     '''
-    def __init__(self, name, input_components = None, output_components = None, action = None, derivatives_place = None, data_place = None, input_format:list[dict] = None, output_format:list[dict] = None, append_auto_input = True, preserve_auto_input = False):
+    def __init__(self, name, input_components:list[Component] = None, output_components:list[Component] = None, action = None, derivatives_place = None, data_place = None, input_format:list[dict] = None, output_format:list[dict] = None, append_auto_input = True, preserve_auto_input = False):
         
         self.name = name
-                      
-        if isinstance(input_components,list):
-            self.input_components_list = input_components
-            self.input_components_set = set(input_components)
-        elif isinstance(input_components,set):
-            self.input_components_set = input_components
-        else:
-            raise ValueError(f"input_components of {self.name} should be a list or set")
+        if input_components is not None:
+                          
+            if isinstance(input_components,list):
+                self.input_components_list = input_components
+                self.input_components_set = set(input_components)
+            else:
+                raise ValueError(f"input_components of {self.name} should be a list or set")
         
-        if isinstance(output_components, list):
-            self.output_components_list = output_components
-            self.output_components_set = set(output_components)
-        elif isinstance(output_components, set):
-            self.output_components_set = output_components
-        else:
-            raise ValueError(f"output_components of {self.name} should be a list or set")
+        if output_components is not None:
+            if isinstance(output_components, list):
+                self.output_components_list = output_components
+                self.output_components_set = set(output_components)
+
+            else:
+                raise ValueError(f"output_components of {self.name} should be a list or set")
                     
             
         self.action = action
@@ -450,7 +572,7 @@ class Work(object):
                     elif len_component_list - component_position == 2:
                         name_surfix, final_surfix = item[-2], item[-1]
                         
-                    return item[component_position].name_for_run(name_prefix = name_prefix, name_surfix = name_surfix, final_prefix = final_prefix, final_surfix = final_surfix)
+                    return item[component_position].use_name(name_prefix = name_prefix, name_surfix = name_surfix, final_prefix = final_prefix, final_surfix = final_surfix)
                 
                 elif isinstance(item, (int, float, complex)):
                     
@@ -660,16 +782,19 @@ class Workflow(Work):
                     if work.append_auto_input:
                         self._auto_input_set.add(work.output_components_list[0])            
                        
-                                                    
-        input_components = self.get_input_components
-        output_components = self.get_output_components
         
-        super().__init__(name, input_components, output_components, **kwargs)
+        super().__init__(name, **kwargs)
+        
+        self.input_components_set = self.get_input_components
+        self.output_components_set = self.get_output_components
         
         if output_component_mannual is None:
-            self.output_components_mannual = set()
+            self.output_components_set = self.get_output_components
         else:
-            self.output_components_mannual = output_component_mannual 
+            if not isinstance(output_component_mannual, set):
+                raise ValueError(f"output_component_mannual of {self.name} should be a set")
+            else:
+                self.output_components_set = output_component_mannual 
         
         
     def add_work(self, work):
