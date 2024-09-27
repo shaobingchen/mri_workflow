@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "neuroworkflow"
-version = "0.1.1beta"
+version = "0.1.2beta"
 authors = [
     {name="shaobingchen", email="shaobingchen0012@gmail.com"},
 ]

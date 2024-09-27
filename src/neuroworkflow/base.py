@@ -41,6 +41,8 @@ class RunMetaData(object):
         delete existing files when running a work
     skip_exist : bool
         skip running a work if all its output files exist
+        it is recommanded to use one of overwrite and skip_exist, if neither is setted, will let each action to decide what to decide
+        overwrite and skip_exist are exclusive
     preview : bool
         make a test file trees show what the running result looks like, no real calculation is performed, all files's content is 'test'
     name_type : str
@@ -310,7 +312,7 @@ class Component(object):
             
         if __extension:
             if extension is None:
-                raise ValueError(f"extension of {self.simplified_bids_name} is not defined, but needed")
+                raise ValueError(f"extension of {self.simplified_bids_name()} is not defined, but needed")
             return f'{"_".join([f"{key}-{value}" for key, value in ordered_dic.items() if value is not None])}_{dic['suffix']}.{dic["extension"]}'
         else:
             return f'{"_".join([f"{key}-{value}" for key, value in ordered_dic.items() if value is not None])}_{dic['suffix']}'
@@ -327,8 +329,8 @@ class Component(object):
                                        
         return self._bids_name_generator(dic, extension)   
     
-    @property        
-    def simplified_bids_name(self):
+       
+    def simplified_bids_name(self, extension = True):
         '''
         generage file identity (run_bids_name without metadata)
         '''
@@ -340,7 +342,7 @@ class Component(object):
             
         dic = dc(self.__dict__)          
         
-        return self._bids_name_generator(dic, True)     
+        return self._bids_name_generator(dic, extension)     
     
     
     def make_test_file(self):
@@ -370,6 +372,41 @@ class Work(object):
         list of input components
     output_components : list
         list of output components
+    action : function
+        action to run
+    derivatives_place : list
+        intermediate place of the output components before session_place in the directory tree.(see _current_derivatives_place in RunMetadata)
+    data_place : list
+        intermediate place of the output components after session_place in the directory tree.(see _current_data_place in RunMetadata)
+    input_format : list[dict]
+        this list should have the same length as input_components, each element of the list is a dictionary to describe the parameters of the input components.
+        this is used when default format is not suitable for the input components.
+    output_format : list[dict]
+        this list should have the same length as output_components, each element of the list is a dictionary to describe the parameters of the output components.
+        this is used when default format is not suitable for the output components.
+    append_auto_input : bool
+        append first element of output_components_list of work to _auto_input_set for other work's auto 
+    preserve_auto_input : bool
+        preserve the components in _auto_input_set even though it is used by this work
+    
+    Attributes
+    ----------
+    input_components_list : list
+        should be same as input_components_list
+    output_components_list : list
+        should be same as output_components_list
+    input_components_set : set
+        set(input_components_list)
+    output_components_set : set
+        set(output_components_list)
+    all_components : set
+        input_components_set | output_components_set
+    
+    Methods
+    -------
+    run : MetaData -> None
+        run this work by executing action, most of other parameters are served for this method. more details see the method's __doc__
+                
     '''
     def __init__(self, name, input_components:list[Component] = None, output_components:list[Component] = None, action = None, derivatives_place = None, data_place = None, input_format:list[dict] = None, output_format:list[dict] = None, append_auto_input = True, preserve_auto_input = False):
         
@@ -429,7 +466,19 @@ class Work(object):
         return self.input_components_set | self.output_components_set
     
     def _pre_run(self, run_metadata):
+        ''' 
+        some preprocessing before running a work
+        add derivatives_place and data_place of work to _current_derivatives_place and _current_data_place of run_metadata
+        then distribute run_metadata's deep copy to output_components
         
+        Controls: control flags is in run_metadata
+        --------
+        overwrite
+        remove pre-exist file in output_components. if the pre-exist file is in input_components, it will not be removed.
+        skip_exist
+        set _skip flag to True if all output components are exist, this will skip run action in run 
+        remove pre-exist file in output_components if part of them are exist        
+        '''
         run_metadata._work_heap.append(self.name)
         run_metadata._current_derivatives_place = run_metadata._current_derivatives_place + self.derivatives_place
         run_metadata._current_data_place = run_metadata._current_data_place + self.data_place
@@ -446,8 +495,8 @@ class Work(object):
                 pass
             elif len(self.input_format) != len(self.input_components_list):
                 raise ValueError(f"input format {self.input_format} of {self.name} don't match the input components {self.input_components_list}")     
-            else: 
-                logger.debug(f"set input component {component.simplified_bids_name} 's format as {self.input_format[index]}")          
+            else:
+                logger.debug(f"set input component {component.simplified_bids_name()} 's format as {self.input_format[index]}")          
                 component.run_metadata._current_format = self.input_format[index]
                 
             if not op.exists(component.use_name()):
@@ -456,7 +505,7 @@ class Work(object):
         if not self.output_components_set:
             logger.error(f"list of output_components {self.name} is empty, eventhough this work update component in input_components and don't generate new file, it should be added to output_components")    
                         
-        for component in self.output_components_set:
+        for index, component in enumerate(self.output_components_set):
             transform_run_metadata = dc(run_metadata)
             component.run_metadata = transform_run_metadata
             
@@ -465,43 +514,45 @@ class Work(object):
             elif len(self.output_format) != len(self.output_components_list):
                 raise ValueError(f"output format {self.output_format} of {self.name} don't match the output components {self.output_components_list}")
             else:
-                logger.debug(f"set output component {component.simplified_bids_name} 's format as {self.output_format[index]}")
+                logger.debug(f"set output component {component.simplified_bids_name()} 's format as {self.output_format[index]}")
                 component.run_metadata._current_format = self.output_format[index]
             
             if not op.exists(component.run_dir()):
                 os.makedirs(component.run_dir())
                 logger.warning(f"create directory {component.run_dir()}")
         
-        _all_output_component_exist = True        
+        _all_output_component_exist = True     
+        _existed_component_set = set()   
+        
         for component in self.output_components_set:
             
-            if op.exists(component.use_name()):                         
-                if component not in self.input_components_set: 
-                    
-                    logger.warning(f"file {component.use_name()} exist before running, and it not in input components.") 
-                    if run_metadata.overwrite: 
-                        
-                        component.remove_file()
-                        logger.warning(f"remove pre-exist file {component.use_name()} because overwrite has been setted")
+            if op.exists(component.use_name()): 
+                _existed_component_set.add(component)              
             
             else:
-                _all_output_component_exist = False
+                _all_output_component_exist = False        
 
+        for component in _existed_component_set - self.input_components_set:
+            
+            logger.warning(f"file {component.use_name()} exist before running, and it not in input components.")
+            if run_metadata.overwrite:                                         
                 
+                component.remove_file()
+                logger.warning(f"remove pre-exist file {component.use_name()} because overwrite has been setted")
+            elif run_metadata.skip_exist and not _all_output_component_exist:
+                
+                logger.warning(f"file {component.use_name()} exist before running, and not all output of this work exist. will remove this file and run this work")
+                component.remove_file()
+                                            
         if  run_metadata.skip_exist and _all_output_component_exist and not self.output_components_set.issubset(self.input_components_set):
             run_metadata._skip = True
             logger.warning(f"skip running {self.name} because all output components are exist, if a output is also a exist input, this may redo a work") 
-           
-                    
-            
-
 
         if self.action is None:            
-            raise ValueError(f"action of {self.simplified_bids_name} is not defined")               
+            raise ValueError(f"action of {self.simplified_bids_name()} is not defined")               
         
         return run_metadata
-            
-                    
+                                
     def run(self, run_metadata):
         
         run_metadata = self._pre_run(run_metadata)
@@ -523,8 +574,7 @@ class Work(object):
             pass
 
         elif self.action.__name__  == '_run_shell_command':
-        
-            
+                    
             def _process_item(self, item):
                 if isinstance(item, Component):
                     if item in self.input_components_set:
@@ -532,7 +582,7 @@ class Work(object):
                     elif item in self.output_components_set:
                         return item.use_name()
                     else:
-                        raise ValueError(f"component {item.simplified_bids_name} of {self.name} is not in either input_components or output_components")
+                        raise ValueError(f"component {item.simplified_bids_name()} of {self.name} is not in either input_components or output_components")
                     
                 elif isinstance(item, AutoInput):
                     
@@ -545,11 +595,9 @@ class Work(object):
                     return item
                 
                 elif isinstance(item, list):
-                    
-                    
+                                        
                     component_position_list = [index for index, item in enumerate(item) if isinstance(item, (Component, dict))]# unfinished
-                    
-                    
+                                        
                     len_component_list = len(component_position_list) - 1
                     
                     if len(component_position_list) == 0:
@@ -582,19 +630,15 @@ class Work(object):
                 elif isinstance(item, (int, float, complex)):
                     
                     return str(item)
-                                                            
-                    
+                                                                                
                 else:
                     raise ValueError(f"item {item} of {self.name} is not a Component, string, list or number")
-            
-            
-            
+                            
             _run_command_list = [_process_item(self, item) for item in self.command_list]
             
             logger.info(f"start running action {self.action.__name__} {_run_command_list} of work {self.name} with command list")
             
             self.action(_run_command_list, run_metadata) #give a dp run_metadata
-
             
             logger.info(f"finish running action {self.action.__name__} of work {self.name}")
                               
@@ -769,6 +813,9 @@ class Workflow(Work):
                             
                             if len(self._auto_input_set) == 1:
                                 work.input_components_list[0] = self._auto_input_set.pop()
+                                work.input_components_set.add(work.input_components_list[0])
+                                if work.preserve_auto_input:
+                                    self._auto_input_set.add(work.input_components_list[0])
                             else:
                                 raise ValueError(f"when doing auto_input on work {work.name} , input_components_list is empty, but _auto_input_set {self._auto_input_set} is given, which is expected has length 1")
                         
@@ -776,13 +823,14 @@ class Workflow(Work):
                             _matched_list = [component for component in self._auto_input_set if all(getattr(component, key) == value for key, value in work.input_components_list[0].dict.items())]
                             if len(_matched_list) == 1:
                                 work.input_components_list[0] = _matched_list[0]
+                                work.input_components_set.add(work.input_components_list[0])
                                 if not work.preserve_auto_input:                                    
                                     self._auto_input_set.remove(_matched_list[0])
                                 
                             elif len(_matched_list) == 0:
-                                raise ValueError(f"when doing auto_input on work {work.name} , first element of input_components is AutoInput, but no matched component in _auto_input_set {[component.simplified_bids_name for component in self._auto_input_set]} with input_components_list {work.input_components_list[0].dict}")
+                                raise ValueError(f"when doing auto_input on work {work.name} , first element of input_components is AutoInput, but no matched component in _auto_input_set {[component.simplified_bids_name() for component in self._auto_input_set]} with input_components_list {work.input_components_list[0].dict}")
                             else:
-                                raise ValueError(f"when doing auto_input on work {work.name} , first element of input_components is AutoInput, but multiple matched component in _auto_input_set {[component.simplified_bids_name for component in self._auto_input_set]} with input_components_list {work.input_components_list[0].dict}")
+                                raise ValueError(f"when doing auto_input on work {work.name} , first element of input_components is AutoInput, but multiple matched component in _auto_input_set {[component.simplified_bids_name() for component in self._auto_input_set]} with input_components_list {work.input_components_list[0].dict}")
                     
                     if work.append_auto_input:
                         self._auto_input_set.add(work.output_components_list[0])            
@@ -856,12 +904,12 @@ class Workflow(Work):
                     ]
                                 
                     if len(matched_works) == 0:
-                        raise ValueError(f"input component {input_component.simplified_bids_name} of work {work.name} is not in any output components of any work")
+                        raise ValueError(f"input component {input_component.simplified_bids_name()} of work {work.name} is not in any output components of any work")
                     elif len(matched_works) == 1:
                         matched_work = matched_works[0]
                     elif len(matched_works) > 1: #test if they are in the same branch, if not, they are conflict, if yes,only keep the last one
                         matched_works.sort(key = cmp_to_key(ancestor_test))
-                        print(f"input component {input_component.simplified_bids_name} of work {work.name} is in output components of multiple works {[matched_work.name for matched_work in matched_works]} in same branch, only keep the last one {matched_works[-1].name}")
+                        print(f"input component {input_component.simplified_bids_name()} of work {work.name} is in output components of multiple works {[matched_work.name for matched_work in matched_works]} in same branch, only keep the last one {matched_works[-1].name}")
                         matched_work = matched_works[-1]
                         
                 if directed_graph.has_edge(matched_works, work):
