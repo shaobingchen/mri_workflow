@@ -408,7 +408,7 @@ class Work(object):
         run this work by executing action, most of other parameters are served for this method. more details see the method's __doc__
                 
     '''
-    def __init__(self, name, input_components:list[Component] = None, output_components:list[Component] = None, action = None, derivatives_place = None, data_place = None, input_format:list[dict] = None, output_format:list[dict] = None, append_auto_input = True, preserve_auto_input = False):
+    def __init__(self, name, input_components:list[Component] = None, output_components:list[Component] = None, action = None, derivatives_place = None, data_place = None, input_format:list[dict] = None, output_format:list[dict] = None, append_auto_input = True, preserve_auto_input = False, exception_tolerance = False):
         
         self.name = name
         if input_components is not None:
@@ -431,6 +431,7 @@ class Work(object):
         self.action = action
         self.append_auto_input = append_auto_input
         self.preserve_auto_input = preserve_auto_input
+        self.exception_tolerance = exception_tolerance
         
         if data_place is None:
             self.data_place = []
@@ -552,17 +553,11 @@ class Work(object):
             raise ValueError(f"action of {self.simplified_bids_name()} is not defined")               
         
         return run_metadata
-                                
-    def run(self, run_metadata):
-        
-        run_metadata = self._pre_run(run_metadata)
+    
+    def _run_action(self, run_metadata):
         
         logger = logging.getLogger(run_metadata.logger)
         
-        if run_metadata._skip:
-            logger.debug(f"_skip flag is {run_metadata._skip}, skip running {self.name}")
-            return
-            
         if run_metadata.preview:
                             
             for component in self.output_components_set:
@@ -640,7 +635,6 @@ class Work(object):
             
             self.action(_run_command_list, run_metadata) #give a dp run_metadata
             
-            logger.info(f"finish running action {self.action.__name__} of work {self.name}")
                               
         elif 'run_metadata' in inspect.signature(self.action).parameters:
 
@@ -650,17 +644,9 @@ class Work(object):
             logger.info(f"start running action {self.action.__name__} {_run_input_components, _run_output_components} of work {self.name} with run metadata")
             
             self.action(_run_input_components, _run_output_components, run_metadata) #give a dp run_metadata
-            # try:
-            #     self.action(_run_input_components, _run_output_components, run_metadata)
-            # except Exception as e:
-                
-            #     logging.getLogger(run_metadata.logger).error(f"error when running {self.name} with error {e}")
-                        
-            #     raise RuntimeError(f"error when running {self.name} with error {e}")
-            
-            logger.info(f"finish running action {self.action.__name__} of work {self.name}")
-            
-                                
+
+        
+                                        
         else:
             
             _run_input_components = [component.use_name() for component in self.input_components_list]
@@ -669,16 +655,29 @@ class Work(object):
             logger.info(f"start running action {self.action.__name__} {_run_input_components, _run_output_components} of work {self.name}")
             
             self.action(_run_input_components, _run_output_components)
-            # try:
-            #     self.action(_run_input_components, _run_output_components)
+
+                                
+    def run(self, run_metadata):
+        
+        run_metadata = self._pre_run(run_metadata)
+        
+        logger = logging.getLogger(run_metadata.logger)
+        
+        if run_metadata._skip:
+            logger.debug(f"_skip flag is {run_metadata._skip}, skip running {self.name}")
+            return
+        
+        if self.exception_tolerance:                
+            try:
+                self._run_action(run_metadata)
+            except Exception as e:
+                import traceback
+                logger.error(f"error when running {self.name}'s _run_action with error {e}, but exception_tolerance is True, so continue running \n {traceback.format_exc()}")
+        else:
+            self._run_action(run_metadata)
+                 
                 
-            # except Exception as e:
-                
-            #     logging.getLogger(run_metadata.logger).error(f"error when running {self.name} with error {e}")
-                        
-            #     raise RuntimeError(f"error when running {self.name} with error {e}")
-                
-            logger.info(f"finish running action {self.action.__name__} of work {self.name}")
+        logger.info(f"finish running action {self.action.__name__} of work {self.name}")
             
     
         
@@ -744,6 +743,8 @@ class CommandWork(Work):
 
         except subprocess.CalledProcessError as e:
             # Handle command execution errors
+            import traceback
+            logger.error(f"Error executing command: {command}\nReturn code: {e.returncode}\nError output: {e.stderr}\n {traceback.format_exc()}")
             raise Exception(
                 f"""
                 Error executing command: {command}
@@ -753,10 +754,14 @@ class CommandWork(Work):
             )
         except OSError as e:
             # Handle OS-level errors (e.g., command not found)
+            import traceback
+            logger.error(f"OS error when trying to execute {command}: {e} \n {traceback.format_exc()}")
             raise Exception(f"OS error when trying to execute {command}: {e}")
 
         except Exception as e:
             # Handle all other exceptions
+            import traceback
+            logger.error(f"unexpected error executing command: {command}: {e} \n {traceback.format_exc()}")
             raise Exception(f"unexpected error executing command: {command}: {e}")
         
         
@@ -793,8 +798,15 @@ class Workflow(Work):
         if work_list is None:
             self.worklist = []
         else:
-            self.work_list = work_list
-            
+            if all(isinstance(work, Work) for work in work_list):
+                self.work_list = work_list
+            else:
+                _not_works = []
+                for index, work in enumerate(work_list):
+                    if not isinstance(work, Work):
+                        _not_works.append((index, work))
+                raise ValueError(f"{_not_works} in work_list \n of {name} should be a list of Work")
+        
         self.enable_auto_input = enable_auto_input
         # do auto input
         # append first element of output_components_list of work to input_components_list for other work's auto input
@@ -812,8 +824,11 @@ class Workflow(Work):
                         if not work.input_components_list[0].dict:
                             
                             if len(self._auto_input_set) == 1:
+                                
+                                work.input_components_set.remove(work.input_components_list[0])
                                 work.input_components_list[0] = self._auto_input_set.pop()
                                 work.input_components_set.add(work.input_components_list[0])
+                                
                                 if work.preserve_auto_input:
                                     self._auto_input_set.add(work.input_components_list[0])
                             else:
@@ -822,8 +837,11 @@ class Workflow(Work):
                         else:
                             _matched_list = [component for component in self._auto_input_set if all(getattr(component, key) == value for key, value in work.input_components_list[0].dict.items())]
                             if len(_matched_list) == 1:
+                                
+                                work.input_components_set.remove(work.input_components_list[0])
                                 work.input_components_list[0] = _matched_list[0]
                                 work.input_components_set.add(work.input_components_list[0])
+                                
                                 if not work.preserve_auto_input:                                    
                                     self._auto_input_set.remove(_matched_list[0])
                                 
