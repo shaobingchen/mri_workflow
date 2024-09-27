@@ -133,7 +133,7 @@ class Component(object):
     
     Parameters
     ----------
-    key-value:
+    key-value
         desc : str
             description of the component
         suffix : str
@@ -151,7 +151,7 @@ class Component(object):
         data_place : list
           
                    
-    control
+    Control
         run_metadata : RunMetaData
             metadata of the run, this is usually not directly setted when initial a component, but passed from work.        
         use_extension : bool
@@ -475,10 +475,10 @@ class Work(object):
         Controls: control flags is in run_metadata
         --------
         overwrite
-        remove pre-exist file in output_components. if the pre-exist file is in input_components, it will not be removed.
+            remove pre-exist file in output_components. if the pre-exist file is in input_components, it will not be removed.
         skip_exist
-        set _skip flag to True if all output components are exist, this will skip run action in run 
-        remove pre-exist file in output_components if part of them are exist        
+            set _skip flag to True if all output components are exist, this will skip run action in run 
+            remove pre-exist file in output_components if part of them are exist        
         '''
         run_metadata._work_heap.append(self.name)
         run_metadata._current_derivatives_place = run_metadata._current_derivatives_place + self.derivatives_place
@@ -555,6 +555,23 @@ class Work(object):
         return run_metadata
     
     def _run_action(self, run_metadata):
+        '''
+        execute action of a work
+        
+        Controls:
+        --------
+        preview 
+            make a test file trees show what the running result looks like, no real calculation is performed, all files's content is 'test'
+        broadcast_metadata
+            broadcast metadata to all works, in _run_action, just pass
+        self.action.__name__  == '_run_shell_command'
+            run a shell command, replace components with appropriate form for specific command
+        'run_metadata' in inspect.signature(self.action).parameters
+            run a action function with run_metadata as a parameter
+        other
+            run a action function without run_metadata as a parameter
+       
+        '''
         
         logger = logging.getLogger(run_metadata.logger)
         
@@ -644,8 +661,6 @@ class Work(object):
             logger.info(f"start running action {self.action.__name__} {_run_input_components, _run_output_components} of work {self.name} with run metadata")
             
             self.action(_run_input_components, _run_output_components, run_metadata) #give a dp run_metadata
-
-        
                                         
         else:
             
@@ -658,6 +673,17 @@ class Work(object):
 
                                 
     def run(self, run_metadata):
+        '''
+        run the action
+        
+        Controls:
+        --------
+        _skip
+            skip running the action if _skip is True
+        exception_tolerance
+            continue running the action even exception occured
+        
+        '''
         
         run_metadata = self._pre_run(run_metadata)
         
@@ -686,7 +712,70 @@ class Work(object):
     
 class CommandWork(Work):
     '''
-    class to wrap command line as a work
+    class to wrap command line as a work, it is a work whose action is _run_shell_command
+    
+    Parameters
+    ----------
+    command_list : list
+        list of command
+        this should be a list of string, Component, list(combination of Component, string)
+        when using list as a member of command_list, it will be used as follow:
+        ['prefix_after_join_dirname', 'prefix_before_join_dirname', Component, 'suffix_before_join_dirname', 'suffix_after_join_dirname'] 
+        -> prefix_after_join_dirname + dirname/(prefix_before_join_dirname + Component + suffix_before_join_dirname) + suffix_after_join_dirname
+        strings in list is optional,
+        if only one string is given in a side of Component, it will be treated as the after one
+        example: 
+            command '3dTshift' has parameter '-tpattern' need to add '@' before the path of a file, then the member of command_list with Component should be ['@', Component], the whole command_list should be ['3dTshift', '-tpattern', ['@', Component]].    
+    save_stdout_to : Component
+        save stdout to Component
+    stdout_to_log : bool
+        print stdout to log
+    env : dict
+        environment variables for the command, will use system's environment variables as a base and add or replace variables of it using env
+        
+    (inherited from Work)
+    name : str
+        name of the work   
+    input_components : list[Component]
+        list of input components
+    output_components : list
+        list of output components
+    action : function
+        action to run
+    derivatives_place : list
+        intermediate place of the output components before session_place in the directory tree.(see _current_derivatives_place in RunMetadata)
+    data_place : list
+        intermediate place of the output components after session_place in the directory tree.(see _current_data_place in RunMetadata)
+    input_format : list[dict]
+        this list should have the same length as input_components, each element of the list is a dictionary to describe the parameters of the input components.
+        this is used when default format is not suitable for the input components.
+    output_format : list[dict]
+        this list should have the same length as output_components, each element of the list is a dictionary to describe the parameters of the output components.
+        this is used when default format is not suitable for the output components.
+    append_auto_input : bool
+        append first element of output_components_list of work to _auto_input_set for other work's auto 
+    preserve_auto_input : bool
+        preserve the components in _auto_input_set even though it is used by this work
+    
+    Attributes
+    ----------   
+    (inherited from Work)
+    input_components_list : list
+        should be same as input_components_list
+    output_components_list : list
+        should be same as output_components_list
+    input_components_set : set
+        set(input_components_list)
+    output_components_set : set
+        set(output_components_list)
+    all_components : set
+        input_components_set | output_components_set
+    
+    Methods
+    -------
+    (inherited from Work)
+    run : MetaData -> None
+        run this work by executing action, most of other parameters are served for this method. more details see the method's __doc__
     '''
     
     def __init__(self, name, input_components=None, output_components=None, command_list = None, save_stdout_to = None, stdout_to_log = True, env = None, **kwargs):
@@ -766,32 +855,42 @@ class CommandWork(Work):
         
         
         logger.debug(f"finish running command {command} inside _run_shell_command")
-        
-        
-        # process = subprocess.Popen(
-        #     command_list,
-        #     stdout=subprocess.PIPE,
-        #     stderr=subprocess.PIPE,  # Capture stderr separately
-        #     text=True  # Return strings instead of bytes
-        # )
-        
-        # # Wait for the process to complete and capture output
-        # stdout, stderr = process.communicate()
-        
-        # for line in stdout.splitlines():
-        #     logger.debug(line)
-            
-        # for line in stderr.splitlines():
-        #     logger.debug(line)
-        
-        # # Check the return code
-        # if process.returncode != 0:
-        #     raise subprocess.CalledProcessError(
-        #         process.returncode, command, stdout, stderr)
-    
-    
+   
 
 class Workflow(Work):
+    '''
+    Workflow is a container of a list of works
+    
+    Parameters
+    ----------
+    name : str
+        name of the workflow
+    work_list : list[Work]
+        list of works
+    output_component_mannual : set
+        output components of the workflow
+    enable_auto_input : bool
+        enable auto input for the workflow
+    (inherited from Work)
+    
+    Attributes
+    ----------
+    work_list : list
+        list of works
+    input_components_set : set
+        set of input components of the workflow
+    output_components_set : set
+        set of output components of the workflow
+    all_components : set
+        input_components_set | output_components_set
+    cp_directed_graph : nx.DiGraph
+        create a directed graph with components as nodes and works as edges
+    work_directed_graph : nx.DiGraph
+        create a directed graph with work as nodes and components as edges
+    
+        
+    
+    '''
     
     def __init__(self, name, work_list = None, output_component_mannual = None, enable_auto_input = False, **kwargs):
         
@@ -856,11 +955,11 @@ class Workflow(Work):
         
         super().__init__(name, **kwargs)
         
-        self.input_components_set = self.get_input_components
-        self.output_components_set = self.get_output_components
+        self.input_components_set = self.get_input_components()
+        self.output_components_set = self.get_output_components()
         
         if output_component_mannual is None:
-            self.output_components_set = self.get_output_components
+            self.output_components_set = self.get_output_components()
         else:
             if not isinstance(output_component_mannual, set):
                 raise ValueError(f"output_component_mannual of {self.name} should be a set")
@@ -939,7 +1038,6 @@ class Workflow(Work):
         
         return directed_graph
     
-    @property
     def get_output_components(self):
         '''
         get output components of a workflow
@@ -947,14 +1045,13 @@ class Workflow(Work):
         '''
         return set().union(*(work.output_components_set for work in self.work_list))
     
-    @property
     def get_input_components(self):
         ''' 
         get input components of a workflow
         '''
         all_input_component = set().union(*(work.input_components_set for work in self.work_list))
         
-        return all_input_component.difference(self.get_output_components)
+        return all_input_component - self.get_output_components()
         
                 
         
