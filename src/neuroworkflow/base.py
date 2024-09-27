@@ -255,7 +255,12 @@ class Component(object):
             case 'run_bids_name':
                 _temp_name = self.run_bids_name(extension)
             case 'simplified_bids_name':
-                _temp_name = self.simplified_bids_name(extension)         
+                _temp_name = self.simplified_bids_name(extension) 
+            case 'only_disc':
+                if extension:
+                    _temp_name = self.desc + '.' + self.extension
+                else:
+                    _temp_name = self.desc
             case _:
                 raise ValueError(f"unknown type {self.name_type} from {self.bids_name}")
         
@@ -289,7 +294,7 @@ class Component(object):
         'MP2RAGE': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'run', 'echo', 'flip', 'inv', 'part', 'chunk', 'space', 'desc'],
         'T1w': ['sub', 'ses', 'task', 'acq', 'ce', 'rec', 'run', 'echo', 'part', 'chunk', 'space', 'desc'],
         'fmap': ['sub', 'ses', 'acq', 'run', 'gre', 'chunk', 'space', 'desc']
-    }            
+    }#TODO add more            
 
  
     def _bids_name_generator(self, dic, extension):
